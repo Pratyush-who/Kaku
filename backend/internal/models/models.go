@@ -40,6 +40,25 @@ type Board struct {
 	UpdatedAt time.Time       `json:"updatedAt"`
 }
 
+// BoardSummary is a lightweight board representation (without heavy content JSON)
+type BoardSummary struct {
+	ID        uuid.UUID  `json:"id"`
+	ProjectID uuid.UUID  `json:"projectId"`
+	Name      string     `json:"name"`
+	Revision  int64      `json:"revision"`
+	CreatedBy *uuid.UUID `json:"createdBy,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
+}
+
+// ProjectDetails includes project metadata, user role, and member/board counts
+type ProjectDetails struct {
+	Project
+	UserRole    ProjectRole `json:"userRole"`
+	MemberCount int         `json:"memberCount"`
+	BoardCount  int         `json:"boardCount"`
+}
+
 // ProjectRole defines the role of a member
 type ProjectRole string
 

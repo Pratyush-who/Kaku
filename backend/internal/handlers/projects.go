@@ -45,7 +45,7 @@ func (h *ProjectHandler) HandleProjects(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if projects == nil {
-			projects = []models.Project{}
+			projects = []models.ProjectDetails{}
 		}
 		httputil.JSON(w, http.StatusOK, projects)
 
@@ -120,7 +120,7 @@ func (h *ProjectHandler) HandleProjectByID(w http.ResponseWriter, r *http.Reques
 	if len(parts) == 1 {
 		switch r.Method {
 		case http.MethodGet:
-			project, err := h.repo.GetProjectByID(r.Context(), projectID)
+			project, err := h.repo.GetProjectDetails(r.Context(), projectID, userID)
 			if err != nil {
 				httputil.Error(w, http.StatusNotFound, "Project not found")
 				return
@@ -310,13 +310,13 @@ type CreateBoardRequest struct {
 func (h *ProjectHandler) handleProjectBoards(w http.ResponseWriter, r *http.Request, projectID, userID uuid.UUID, role models.ProjectRole) {
 	switch r.Method {
 	case http.MethodGet:
-		boards, err := h.repo.ListProjectBoards(r.Context(), projectID)
+		boards, err := h.repo.ListProjectBoardsSummary(r.Context(), projectID)
 		if err != nil {
 			httputil.Error(w, http.StatusInternalServerError, "Failed to list boards")
 			return
 		}
 		if boards == nil {
-			boards = []models.Board{}
+			boards = []models.BoardSummary{}
 		}
 		httputil.JSON(w, http.StatusOK, boards)
 

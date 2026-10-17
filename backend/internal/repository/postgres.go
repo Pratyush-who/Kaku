@@ -205,9 +205,12 @@ func (r *PostgresRepository) CreateProject(ctx context.Context, project *models.
 	return tx.Commit()
 }
 
-func (r *PostgresRepository) ListUserProjects(ctx context.Context, userID uuid.UUID) ([]models.Project, error) {
+func (r *PostgresRepository) ListUserProjects(ctx context.Context, userID uuid.UUID) ([]models.ProjectDetails, error) {
 	query := `
-		SELECT p.id, p.owner_id, p.name, p.created_at, p.updated_at
+		SELECT p.id, p.owner_id, p.name, p.created_at, p.updated_at,
+		       pm.role,
+		       (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) AS member_count,
+		       (SELECT COUNT(*) FROM boards WHERE project_id = p.id) AS board_count
 		FROM projects p
 		INNER JOIN project_members pm ON p.id = pm.project_id
 		WHERE pm.user_id = $1
@@ -219,15 +222,54 @@ func (r *PostgresRepository) ListUserProjects(ctx context.Context, userID uuid.U
 	}
 	defer rows.Close()
 
-	var projects []models.Project
+	var projects []models.ProjectDetails
 	for rows.Next() {
-		var p models.Project
-		if err := rows.Scan(&p.ID, &p.OwnerID, &p.Name, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		var p models.ProjectDetails
+		if err := rows.Scan(
+			&p.ID,
+			&p.OwnerID,
+			&p.Name,
+			&p.CreatedAt,
+			&p.UpdatedAt,
+			&p.UserRole,
+			&p.MemberCount,
+			&p.BoardCount,
+		); err != nil {
 			return nil, err
 		}
 		projects = append(projects, p)
 	}
 	return projects, nil
+}
+
+func (r *PostgresRepository) GetProjectDetails(ctx context.Context, projectID, userID uuid.UUID) (*models.ProjectDetails, error) {
+	query := `
+		SELECT p.id, p.owner_id, p.name, p.created_at, p.updated_at,
+		       pm.role,
+		       (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) AS member_count,
+		       (SELECT COUNT(*) FROM boards WHERE project_id = p.id) AS board_count
+		FROM projects p
+		INNER JOIN project_members pm ON p.id = pm.project_id
+		WHERE p.id = $1 AND pm.user_id = $2
+	`
+	p := &models.ProjectDetails{}
+	err := r.db.QueryRowContext(ctx, query, projectID, userID).Scan(
+		&p.ID,
+		&p.OwnerID,
+		&p.Name,
+		&p.CreatedAt,
+		&p.UpdatedAt,
+		&p.UserRole,
+		&p.MemberCount,
+		&p.BoardCount,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
 }
 
 func (r *PostgresRepository) GetProjectByID(ctx context.Context, projectID uuid.UUID) (*models.Project, error) {
@@ -393,9 +435,9 @@ func (r *PostgresRepository) CreateBoard(ctx context.Context, board *models.Boar
 	return err
 }
 
-func (r *PostgresRepository) ListProjectBoards(ctx context.Context, projectID uuid.UUID) ([]models.Board, error) {
+func (r *PostgresRepository) ListProjectBoardsSummary(ctx context.Context, projectID uuid.UUID) ([]models.BoardSummary, error) {
 	query := `
-		SELECT id, project_id, name, content, viewport, revision, created_by, created_at, updated_at
+		SELECT id, project_id, name, revision, created_by, created_at, updated_at
 		FROM boards
 		WHERE project_id = $1
 		ORDER BY updated_at DESC
@@ -406,15 +448,13 @@ func (r *PostgresRepository) ListProjectBoards(ctx context.Context, projectID uu
 	}
 	defer rows.Close()
 
-	var boards []models.Board
+	var boards []models.BoardSummary
 	for rows.Next() {
-		var b models.Board
+		var b models.BoardSummary
 		err := rows.Scan(
 			&b.ID,
 			&b.ProjectID,
 			&b.Name,
-			&b.Content,
-			&b.Viewport,
 			&b.Revision,
 			&b.CreatedBy,
 			&b.CreatedAt,
@@ -426,6 +466,34 @@ func (r *PostgresRepository) ListProjectBoards(ctx context.Context, projectID uu
 		boards = append(boards, b)
 	}
 	return boards, nil
+}
+
+func (r *PostgresRepository) DuplicateBoard(ctx context.Context, boardID, userID uuid.UUID, newName string) (*models.Board, error) {
+	orig, err := r.GetBoardByID(ctx, boardID)
+	if err != nil {
+		return nil, err
+	}
+
+	if newName == "" {
+		newName = orig.Name + " (Copy)"
+	}
+
+	clone := &models.Board{
+		ID:        uuid.New(),
+		ProjectID: orig.ProjectID,
+		Name:      newName,
+		Content:   orig.Content,
+		Viewport:  orig.Viewport,
+		Revision:  0,
+		CreatedBy: &userID,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	if err := r.CreateBoard(ctx, clone); err != nil {
+		return nil, err
+	}
+	return clone, nil
 }
 
 func (r *PostgresRepository) GetBoardByID(ctx context.Context, boardID uuid.UUID) (*models.Board, error) {

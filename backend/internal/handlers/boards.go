@@ -161,5 +161,32 @@ func (h *BoardHandler) HandleBoardByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /api/v1/boards/{boardId}/duplicate
+	if len(parts) == 2 && parts[1] == "duplicate" {
+		if r.Method != http.MethodPost {
+			httputil.Error(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+
+		if role != models.RoleOwner && role != models.RoleEditor {
+			httputil.Error(w, http.StatusForbidden, "Only owners and editors can duplicate boards")
+			return
+		}
+
+		var req struct {
+			Name string `json:"name"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		clonedBoard, err := h.repo.DuplicateBoard(r.Context(), boardID, userID, strings.TrimSpace(req.Name))
+		if err != nil {
+			httputil.Error(w, http.StatusInternalServerError, "Failed to duplicate board")
+			return
+		}
+
+		httputil.JSON(w, http.StatusCreated, clonedBoard)
+		return
+	}
+
 	httputil.Error(w, http.StatusNotFound, "Endpoint not found")
 }
