@@ -112,6 +112,49 @@ func (r *PostgresRepository) UserExistsByEmail(ctx context.Context, email string
 	return exists, err
 }
 
+func (r *PostgresRepository) UpdateUserProfile(ctx context.Context, userID uuid.UUID, name, displayName string) (*models.User, error) {
+	query := `
+		UPDATE users
+		SET name = $1, display_name = $2, updated_at = now()
+		WHERE id = $3
+		RETURNING id, name, email, password_hash, display_name, created_at, updated_at
+	`
+	user := &models.User{}
+	err := r.db.QueryRowContext(ctx, query, name, displayName, userID).Scan(
+		&user.ID,
+		&user.Name,
+		&user.Email,
+		&user.PasswordHash,
+		&user.DisplayName,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+func (r *PostgresRepository) UpdateUserPassword(ctx context.Context, userID uuid.UUID, passwordHash string) error {
+	query := `
+		UPDATE users
+		SET password_hash = $1, updated_at = now()
+		WHERE id = $2
+	`
+	res, err := r.db.ExecContext(ctx, query, passwordHash, userID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // Project methods
 
 func (r *PostgresRepository) CreateProject(ctx context.Context, project *models.Project) error {

@@ -71,8 +71,9 @@ func main() {
 	// Protected Endpoints (Wrapped with AuthMiddleware)
 	authMW := middleware.AuthMiddleware(tokenService)
 
-	// /api/v1/me
+	// User Profile Endpoints
 	mux.Handle("/api/v1/me", authMW(http.HandlerFunc(authHandler.Me)))
+	mux.Handle("/api/v1/me/password", authMW(http.HandlerFunc(authHandler.ChangePassword)))
 
 	// /api/v1/projects and /api/v1/projects/
 	mux.Handle("/api/v1/projects", authMW(http.HandlerFunc(projectHandler.HandleProjects)))

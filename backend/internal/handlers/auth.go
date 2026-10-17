@@ -158,7 +158,65 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		httputil.Error(w, http.StatusUnauthorized, "Unauthorized")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		user, err := h.repo.GetUserByID(r.Context(), userID)
+		if err != nil {
+			httputil.Error(w, http.StatusNotFound, "User not found")
+			return
+		}
+		httputil.JSON(w, http.StatusOK, user)
+
+	case http.MethodPatch, http.MethodPut:
+		var req struct {
+			Name        string `json:"name"`
+			DisplayName string `json:"displayName"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httputil.Error(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+
+		user, err := h.repo.GetUserByID(r.Context(), userID)
+		if err != nil {
+			httputil.Error(w, http.StatusNotFound, "User not found")
+			return
+		}
+
+		name := strings.TrimSpace(req.Name)
+		if name == "" {
+			name = user.Name
+		}
+		displayName := strings.TrimSpace(req.DisplayName)
+		if displayName == "" {
+			displayName = user.DisplayName
+		}
+
+		updatedUser, err := h.repo.UpdateUserProfile(r.Context(), userID, name, displayName)
+		if err != nil {
+			httputil.Error(w, http.StatusInternalServerError, "Failed to update profile")
+			return
+		}
+		httputil.JSON(w, http.StatusOK, updatedUser)
+
+	default:
+		httputil.Error(w, http.StatusMethodNotAllowed, "Method not allowed")
+	}
+}
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}
+
+func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
 		httputil.Error(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
@@ -169,11 +227,44 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var req ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.Error(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		httputil.Error(w, http.StatusBadRequest, "Current password and new password are required")
+		return
+	}
+
+	if len(req.NewPassword) < 8 {
+		httputil.Error(w, http.StatusBadRequest, "New password must be at least 8 characters")
+		return
+	}
+
 	user, err := h.repo.GetUserByID(r.Context(), userID)
 	if err != nil {
 		httputil.Error(w, http.StatusNotFound, "User not found")
 		return
 	}
 
-	httputil.JSON(w, http.StatusOK, user)
+	if !auth.CheckPassword(req.CurrentPassword, user.PasswordHash) {
+		httputil.Error(w, http.StatusUnauthorized, "Current password is incorrect")
+		return
+	}
+
+	newHash, err := auth.HashPassword(req.NewPassword, h.bcryptCost)
+	if err != nil {
+		httputil.Error(w, http.StatusInternalServerError, "Failed to encrypt new password")
+		return
+	}
+
+	if err := h.repo.UpdateUserPassword(r.Context(), userID, newHash); err != nil {
+		httputil.Error(w, http.StatusInternalServerError, "Failed to update password")
+		return
+	}
+
+	httputil.JSON(w, http.StatusOK, map[string]string{"message": "Password updated successfully"})
 }
+
