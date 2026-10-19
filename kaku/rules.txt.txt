@@ -1,0 +1,616 @@
+Flutter App Development Rules
+1. Feature-First Architecture
+Organize the project using a Core + Features structure.
+Every feature (Home, Dashboard, Profile, Auth, Settings, etc.) must be completely self-contained.
+Each feature should contain:
+data/
+domain/
+presentation/
+Features must not directly depend on each other's implementation. Only shared code belongs in core.
+
+Example:
+
+lib/
+ ├── core/
+ ├── features/
+ │    ├── auth/
+ │    ├── home/
+ │    ├── dashboard/
+ │    └── profile/
+2. Presentation Layer
+
+Inside every feature:
+
+presentation/
+ ├── pages/
+ ├── widgets/
+ ├── bloc/ (Cubit/BLoC)
+ ├── controllers/ (if required)
+ └── states/ (if required)
+Pages should mainly compose widgets and define layout.
+Do not create huge files. Split widgets into separate files whenever they become reusable or large (generally 250–300 lines max).
+Before creating a widget, check whether a similar one already exists in core/common/widgets.
+Keep widgets focused on a single responsibility.
+3. Core Module
+
+Everything shared across features belongs inside core.
+
+Suggested structure:
+
+core/
+ ├── theme/
+ │     └── themes.dart
+ ├── routes/
+ │     └── routes.dart
+ ├── common/
+ │     ├── widgets/
+ │     ├── extensions/
+ │     ├── constants/
+ │     ├── helpers/
+ │     ├── dialogs/
+ │     └── models/
+ ├── services/
+ ├── utils/
+ ├── network/
+ ├── storage/
+ └── errors/
+
+Only move code into core if it is genuinely shared by multiple features.
+
+4. Routing
+Use GoRouter.
+Keep all routing inside core/routes/routes.dart.
+Navigation should be centralized.
+Prefer typed routes.
+Avoid pushing routes manually throughout the project unless necessary.
+5. App Entry
+
+main.dart should stay minimal.
+
+Responsibilities:
+
+Initialize services.
+Initialize dependency injection.
+Initialize Firebase (if needed).
+Initialize local storage.
+Run the application.
+
+Move all app configuration into:
+
+app.dart
+
+where:
+
+Theme
+Router
+Localization
+Global Providers
+App-wide wrappers
+
+are configured.
+
+6. App Shell & Bottom Navigation
+
+The bottom navigation should exist only once.
+
+AppShell
+ ├── BottomNavigationBar
+ └── NavigationShell
+      ├── Home
+      ├── Dashboard
+      ├── Profile
+      └── ...
+Do not recreate the BottomNavigationBar on every page.
+Only pages should change.
+Keep navigation modular.
+7. State Management
+Use BLoC/Cubit properly.
+Every feature owns its own state.
+Don't keep global state unless it is actually global.
+A feature should manage:
+Loading
+Errors
+Business Logic
+Prevent unnecessary rebuilds.
+Preserve State
+
+One common issue is switching tabs (Home → Profile → Home) causing Home to reload entirely.
+
+Avoid this.
+
+Preserve screen state whenever possible.
+Do not refetch data just because the user switched tabs.
+Reuse already loaded state unless:
+User performs pull-to-refresh.
+Cache expires.
+Data has actually changed.
+Real-time updates indicate new data.
+
+Use:
+
+IndexedStack
+AutomaticKeepAliveClientMixin
+Proper BLoC lifecycle
+Repository caching
+Local cache
+Stream subscriptions where appropriate
+
+The app should feel continuous instead of restarting every screen.
+
+8. Error Handling
+
+Never let one failing component break the entire page.
+
+Good practices:
+
+Handle errors locally.
+Show retry widgets only for the failed component.
+Keep remaining UI usable.
+Never replace an entire screen with an error if only one section failed.
+
+Example:
+
+Home
+ ├── Banner ✅
+ ├── Categories ❌ Retry
+ ├── Trending ✅
+ └── Recommended ✅
+9. Loading Experience
+
+Loading should always communicate progress.
+
+Buttons should show loading indicators while processing.
+Disable repeated taps during loading.
+Pages should use shimmer/skeleton loaders when suitable.
+Small components can use spinners.
+Only load what is necessary.
+Keep already-loaded content visible whenever possible.
+Don't overuse skeletons or shimmers.
+
+Examples:
+
+✅ Button → Loading Spinner
+
+✅ Product List → Skeleton
+
+✅ Profile Image → Placeholder
+
+10. Reusability
+
+Before writing a widget ask:
+
+Is it only used in this feature?
+
+→ Keep inside feature.
+
+Will it be used elsewhere?
+
+→ Move to core/common/widgets.
+
+Avoid duplicate implementations.
+
+11. Separation of Responsibilities
+UI renders data.
+BLoC/Cubit manages state.
+Repository handles data.
+Services call APIs.
+Utilities contain helper functions.
+Models remain simple.
+
+Never put business logic inside widgets.
+
+12. Theming
+
+Never hardcode:
+
+Colors
+Fonts
+Text Styles
+Border Radius
+Padding
+Spacing
+Animations
+
+Use centralized themes.
+
+Even if the app only ships in one theme initially, structure it so Dark/Light mode can easily be added later.
+
+13. UI & Design Quality
+
+Avoid generic AI-looking UI.
+
+Do not generate:
+
+Huge empty cards
+Massive unused whitespace
+Oversized containers
+Emoji-heavy interfaces
+Repetitive layouts
+Generic Material templates
+
+Instead:
+
+Follow modern UI practices.
+Use proper spacing hierarchy.
+Use icons where appropriate (don't overuse them).
+Create visual depth using elevation, shadows, gradients, borders or subtle accents where suitable.
+Make every section feel intentionally designed.
+
+The app should look handcrafted, not AI-generated.
+
+14. Screen Ending & Visual Polish
+
+Pages should not abruptly end.
+
+If a page reaches its bottom naturally:
+
+Add subtle branding.
+Add a faded app logo.
+Add the app name.
+Add a small quote/tagline if appropriate.
+
+Example:
+
+────────────
+
+Made with ❤️
+
+MyApp
+
+or
+
+Never stop exploring.
+
+MyApp
+
+This creates a more premium and polished experience.
+
+15. Navigation Drawer
+
+Consider using:
+
+Left Drawer
+Right Drawer
+Side Panels
+
+when they improve usability.
+
+However:
+
+Don't force drawers into every app.
+Only use them when they make navigation easier.
+Drawers should feel premium and well-designed, not default Material drawers.
+16. Responsiveness
+
+The app should work well on:
+
+Small phones
+Large phones
+Tablets
+
+Avoid:
+
+Fixed widths
+Fixed heights
+Pixel-perfect assumptions
+
+Use responsive layouts.
+
+17. Performance
+Use const wherever possible.
+Avoid unnecessary rebuilds.
+Lazy load lists.
+Dispose controllers properly.
+Cache expensive operations.
+Minimize widget tree complexity.
+Prefer pagination over loading huge datasets.
+18. Networking
+Centralize networking.
+Use interceptors.
+Handle timeouts gracefully.
+Parse models safely.
+Never expose raw exceptions to users.
+Log useful errors in debug mode.
+Connectivity
+
+If internet disconnects:
+
+❌ Don't interrupt users with a blocking center dialog.
+
+✅ Show a bottom sheet/snackbar/banner indicating connectivity changes while keeping existing content accessible.
+
+19. Data Freshness
+
+Data should feel fresh without wasting resources.
+
+Cache recently fetched data.
+Avoid unnecessary API calls.
+Refresh intelligently.
+Support pull-to-refresh.
+Support real-time updates where applicable.
+If data hasn't changed, reuse existing state instead of rebuilding everything.
+
+Balance freshness with performance.
+
+20. Code Quality
+Follow consistent naming.
+Keep functions focused.
+One responsibility per class.
+Remove dead code.
+Avoid magic numbers.
+Avoid duplicated logic.
+Prefer composition over inheritance.
+Keep code readable over clever.
+21. User Experience First
+
+Every architectural decision should improve the user experience.
+
+The app should:
+
+Never freeze unnecessarily.
+Never lose user progress unexpectedly.
+Never rebuild the whole screen for a tiny update.
+Preserve state between navigation whenever possible.
+Recover gracefully from failures.
+Feel smooth on slow devices.
+Feel responsive on slow networks.
+Animate naturally without excessive motion.
+Minimize user effort.
+Always prioritize perceived performance over raw implementation simplicity.
+22. General Development Philosophy
+
+Before implementing any feature, ask:
+
+Can this be made more modular?
+Can this be reused later?
+Will this scale if the app grows?
+Is the UX smooth?
+Does this feel like a polished production app rather than a demo?
+Am I writing code that another developer can easily understand in six months?
+Is this the experience I would expect from a top-tier app like Spotify, Notion, Blinkit, Airbnb, or Instagram?
+
+23. UX Principles
+
+Every screen should be designed using established UX principles rather than just making the UI look good.
+
+Whenever applicable, consider principles such as:
+
+Jakob's Law – Users expect interfaces to work similarly to products they already know.
+Hick's Law – Reduce the number of choices presented at once to make decisions faster.
+Fitts's Law – Frequently used actions should be easy to reach and tap.
+Miller's Law – Avoid overwhelming users with too much information at once.
+Aesthetic-Usability Effect – Beautiful interfaces are often perceived as easier to use.
+Progressive Disclosure – Show advanced options only when needed.
+Peak-End Rule – Leave users with memorable positive moments, especially at the end of important flows.
+Recognition over Recall – Users shouldn't have to remember information; present clear visual cues instead.
+
+Every UI decision should answer:
+
+Is this easier for the user?
+Is this reducing cognitive load?
+Is this improving discoverability?
+
+Never sacrifice usability just to make something visually different.
+
+24. UI Design Standards
+
+The application should feel modern and professionally designed rather than looking like a generated template.
+
+Avoid:
+
+Giant empty containers.
+Excessive whitespace.
+Generic Material layouts.
+Emoji-heavy interfaces.
+Random gradients.
+Inconsistent spacing.
+Poor visual hierarchy.
+
+Instead:
+
+Use a consistent spacing system.
+Maintain a clear visual hierarchy.
+Use icons where appropriate (don't overuse them).
+Choose colors intentionally.
+Use subtle animations where they improve feedback.
+Keep interactions smooth and polished.
+Design every screen with attention to detail.
+
+Before building the UI, ask the user:
+
+Preferred design style (Minimal, Glassmorphism, Neumorphism, Material 3, Apple-inspired, etc.)
+Theme preference.
+Color preference.
+Any apps they want the design to take inspiration from.
+
+Use these preferences to maintain a consistent design language across the app.
+
+25. Theme & Color System
+
+Before designing the application, ask the user:
+
+What type of theme do you want?
+Preferred primary color.
+Preferred accent color.
+Design inspiration (Spotify, Apple, Notion, Instagram, Blinkit, Airbnb, etc.)
+
+Build a centralized design system that includes:
+
+Primary colors.
+Secondary colors.
+Typography.
+Elevation.
+Radius.
+Shadows.
+Icon styles.
+Button styles.
+Animations.
+
+Avoid randomly choosing colors for different screens.
+
+26. Success States
+
+Users should always know when an important action has completed successfully.
+
+For critical actions, provide clear success feedback.
+
+Examples:
+
+Payment completed.
+Money transferred.
+Order placed.
+Booking confirmed.
+Password changed.
+Profile updated.
+File uploaded.
+Data saved.
+
+Examples of suitable feedback:
+
+Success screen.
+Success animation.
+Checkmark animation.
+Success dialog.
+Bottom sheet.
+Snackbar (depending on importance).
+
+Example:
+
+❌ User pays $100 → Screen doesn't change.
+
+User keeps pressing "Pay".
+
+Good UX:
+
+✅ Payment Successful
+
+Order ID: XXXXX
+
+Amount Paid: $100
+
+Estimated confirmation...
+
+Not every action needs a success screen.
+
+For lightweight actions such as:
+
+Account creation.
+Like button.
+Bookmark.
+Toggle switch.
+
+Simple visual confirmation is enough.
+
+Choose feedback proportional to the importance of the action.
+
+27. Onboarding Experience
+
+Provide a polished onboarding experience.
+
+Include:
+
+Splash Screen.
+App logo.
+Smooth app startup.
+Optional onboarding screens (only if they add value).
+
+After first signup/login, briefly introduce the application's most useful features.
+
+Keep onboarding:
+
+Short.
+Interactive.
+Skippable.
+Helpful.
+
+Avoid forcing users through long tutorials.
+
+The goal is to reduce confusion while helping users discover important functionality.
+
+28. Dialogs, Toasts & User Feedback
+
+Every form of user feedback should match the application's design system.
+
+Toasts
+
+Use custom-themed toasts/snackbars for:
+
+Small errors.
+Validation messages.
+Success confirmations.
+Informational messages.
+
+Avoid default-looking system snackbars.
+
+Confirmation Dialogs
+
+Use confirmation dialogs only for important or destructive actions.
+
+Examples:
+
+Logout.
+Delete account.
+Delete data.
+Cancel payment.
+Discard unsaved changes.
+Remove important files.
+
+Do not ask for confirmation on every small action.
+
+Too many confirmations create friction.
+
+Bottom Sheets
+
+Prefer bottom sheets when:
+
+Choosing options.
+Selecting filters.
+Picking actions.
+Displaying additional information.
+
+Bottom sheets should feel integrated into the design, with proper spacing, rounded corners, and themed styling.
+
+Loading Feedback
+
+Whenever users trigger an action:
+
+Show immediate feedback.
+Prevent duplicate submissions.
+Disable repeated taps.
+Clearly communicate progress.
+
+Users should never wonder:
+
+"Did it work?"
+"Should I press again?"
+"Is the app frozen?"
+29. Delightful Micro-Interactions
+
+Use subtle animations and transitions to make the app feel alive.
+
+Examples:
+
+Button press animations.
+Success check animations.
+Smooth page transitions.
+List item animations.
+Pull-to-refresh.
+Hero animations where appropriate.
+Animated loading indicators.
+Smooth state transitions.
+
+Animations should enhance usability—not slow the app down or become distracting.
+
+30. Product Mindset
+
+Don't build screens—build experiences.
+
+For every feature, ask:
+
+Does the user always know what's happening?
+Does the user know what to do next?
+Is every important action acknowledged?
+Is there unnecessary waiting?
+Can confusion be reduced?
+Does this interaction feel polished?
+Would this experience fit naturally in a high-quality app like Apple, Notion, Spotify, Airbnb, or Blinkit?
