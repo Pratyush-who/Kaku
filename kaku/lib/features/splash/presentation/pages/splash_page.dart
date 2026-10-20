@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/common/constants/app_constants.dart';
 import '../../../../core/common/widgets/app_brand_logo.dart';
+import '../../../../core/repositories/auth_repository.dart';
 import '../../../../core/routes/routes.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -47,10 +49,23 @@ class _SplashPageState extends State<SplashPage>
 
     _animController.forward();
 
-    // Smooth transition to Auth after splash display
-    _navTimer = Timer(const Duration(milliseconds: 2300), () {
+    // Check authentication and navigate
+    _checkAuthAndNavigate();
+  }
+
+  Future<void> _checkAuthAndNavigate() async {
+    final stopwatch = Stopwatch()..start();
+    final user = await AuthRepository().checkAuthStatus();
+    final elapsed = stopwatch.elapsedMilliseconds;
+    final remainingWait = math.max(0, 1800 - elapsed);
+
+    _navTimer = Timer(Duration(milliseconds: remainingWait), () {
       if (mounted) {
-        context.go(AppRoutes.auth);
+        if (user != null) {
+          context.go(AppRoutes.projects);
+        } else {
+          context.go(AppRoutes.auth);
+        }
       }
     });
   }

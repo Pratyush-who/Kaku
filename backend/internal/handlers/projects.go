@@ -88,11 +88,12 @@ func (h *ProjectHandler) HandleProjectByID(w http.ResponseWriter, r *http.Reques
 
 	// URL format: /api/v1/projects/{projectId} or with sub-resources
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/projects/")
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) == 0 || parts[0] == "" {
-		httputil.Error(w, http.StatusBadRequest, "Invalid project ID")
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		h.HandleProjects(w, r)
 		return
 	}
+	parts := strings.Split(trimmed, "/")
 
 	projectID, err := uuid.Parse(parts[0])
 	if err != nil {

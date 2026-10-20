@@ -1,4 +1,6 @@
-/// Parameter models for Auth operations (Rule 1 & Rule 11).
+export '../../../../core/models/user_model.dart';
+
+/// Parameter models for Auth operations
 class SignInParams {
   const SignInParams({
     required this.email,
@@ -21,16 +23,4 @@ class SignUpParams {
   final String fullName;
   final String email;
   final String password;
-}
-
-class UserModel {
-  const UserModel({
-    required this.id,
-    required this.email,
-    required this.name,
-  });
-
-  final String id;
-  final String email;
-  final String name;
 }

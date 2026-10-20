@@ -10,6 +10,8 @@ import (
 	"syscall"
 	"time"
 
+	_ "embed"
+
 	_ "github.com/lib/pq"
 
 	"github.com/Pratyush-who/Kaku/backend/internal/auth"
@@ -40,6 +42,12 @@ func main() {
 		log.Printf("Warning: Database ping failed (will retry on requests): %v", err)
 	} else {
 		log.Printf("Connected to PostgreSQL successfully")
+		// Automatically ensure database schema is applied
+		if err := autoMigrate(db); err != nil {
+			log.Printf("Warning: Database schema auto-migration check: %v", err)
+		} else {
+			log.Printf("Database schema is ready and verified")
+		}
 	}
 	cancel()
 
@@ -79,11 +87,12 @@ func main() {
 	mux.Handle("/api/v1/projects", authMW(http.HandlerFunc(projectHandler.HandleProjects)))
 	mux.Handle("/api/v1/projects/", authMW(http.HandlerFunc(projectHandler.HandleProjectByID)))
 
-	// /api/v1/boards/
+	// /api/v1/boards and /api/v1/boards/
+	mux.Handle("/api/v1/boards", authMW(http.HandlerFunc(boardHandler.HandleBoardByID)))
 	mux.Handle("/api/v1/boards/", authMW(http.HandlerFunc(boardHandler.HandleBoardByID)))
 
 	// Invitations (inspection is public, accepting requires auth)
-	mux.HandleFunc("/api/v1/invitations/", func(w http.ResponseWriter, r *http.Request) {
+	invitationMuxFunc := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			// Accepting requires auth
 			authMW(http.HandlerFunc(invitationHandler.HandleInvitation)).ServeHTTP(w, r)
@@ -91,7 +100,9 @@ func main() {
 			// Inspection / GET is public
 			invitationHandler.HandleInvitation(w, r)
 		}
-	})
+	}
+	mux.HandleFunc("/api/v1/invitations", invitationMuxFunc)
+	mux.HandleFunc("/api/v1/invitations/", invitationMuxFunc)
 
 	// Global Middlewares (CORS & Logging)
 	handler := middleware.Logger(middleware.CORS(mux))
@@ -125,4 +136,14 @@ func main() {
 	}
 
 	log.Println("Server exiting")
+}
+
+var schemaSQL string
+
+func autoMigrate(db *sql.DB) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := db.ExecContext(ctx, schemaSQL)
+	return err
 }

@@ -47,11 +47,13 @@ func (h *BoardHandler) HandleBoardByID(w http.ResponseWriter, r *http.Request) {
 
 	// URL format: /api/v1/boards/{boardId} or /api/v1/boards/{boardId}/content
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/boards/")
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) == 0 || parts[0] == "" {
-		httputil.Error(w, http.StatusBadRequest, "Invalid board ID")
+	path = strings.TrimPrefix(path, "/api/v1/boards")
+	trimmed := strings.Trim(path, "/")
+	if trimmed == "" {
+		httputil.Error(w, http.StatusBadRequest, "Board ID is required")
 		return
 	}
+	parts := strings.Split(trimmed, "/")
 
 	boardID, err := uuid.Parse(parts[0])
 	if err != nil {

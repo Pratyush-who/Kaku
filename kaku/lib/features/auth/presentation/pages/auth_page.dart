@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
 import '../../../../core/common/constants/app_constants.dart';
 import '../../../../core/common/widgets/app_brand_logo.dart';
 import '../../../../core/common/widgets/screen_footer_brand.dart';
+import '../../../../core/routes/routes.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
+import '../../../profile/presentation/widgets/profile_settings_modal.dart';
 import '../cubit/auth_cubit.dart';
 import '../cubit/auth_state.dart';
 import '../widgets/auth_header_hero.dart';
@@ -86,6 +89,7 @@ class _AuthView extends StatelessWidget {
               ),
             ),
           );
+          context.go(AppRoutes.projects);
         }
       },
       builder: (context, state) {
@@ -108,40 +112,52 @@ class _AuthView extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const AppBrandLogo(size: 34.0, fontSize: 18.0),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10.0,
-                            vertical: 5.0,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.darkSurfaceElevated,
-                            borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                            border: Border.all(
-                              color: AppColors.darkBorder,
-                              width: 0.8,
+                        InkWell(
+                          onTap: () {
+                            ProfileSettingsModal.show(context);
+                          },
+                          borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10.0,
+                              vertical: 5.0,
                             ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 6.0,
-                                height: 6.0,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.accentPrimary,
-                                  shape: BoxShape.circle,
-                                ),
+                            decoration: BoxDecoration(
+                              color: AppColors.darkSurfaceElevated,
+                              borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                              border: Border.all(
+                                color: AppColors.darkBorder,
+                                width: 0.8,
                               ),
-                              const SizedBox(width: 6.0),
-                              Text(
-                                'Collaborative',
-                                style: AppTypography.labelSmall.copyWith(
-                                  fontSize: 10.5,
-                                  color: AppColors.textSecondaryDark,
-                                  fontWeight: FontWeight.w600,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 6.0,
+                                  height: 6.0,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.accentPrimary,
+                                    shape: BoxShape.circle,
+                                  ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 6.0),
+                                Text(
+                                  'Server Setup',
+                                  style: AppTypography.labelSmall.copyWith(
+                                    fontSize: 10.5,
+                                    color: AppColors.textSecondaryDark,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 4.0),
+                                const Icon(
+                                  Icons.settings_outlined,
+                                  size: 13.0,
+                                  color: AppColors.textTertiaryDark,
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],

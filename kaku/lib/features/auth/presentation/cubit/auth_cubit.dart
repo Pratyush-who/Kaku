@@ -1,10 +1,14 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
-import '../../domain/models/user_credential_params.dart';
+import '../../../../core/repositories/auth_repository.dart';
 import 'auth_state.dart';
 
-/// Cubit for managing authentication state & user actions (Rule 7, 8, 9).
+/// Cubit for managing authentication state & user actions
 class AuthCubit extends Cubit<AuthState> {
-  AuthCubit() : super(const AuthInitial());
+  AuthCubit({AuthRepository? authRepository})
+      : _authRepository = authRepository ?? AuthRepository(),
+        super(const AuthInitial());
+
+  final AuthRepository _authRepository;
 
   void toggleMode() {
     final nextMode = state.mode == AuthMode.signIn ? AuthMode.signUp : AuthMode.signIn;
@@ -22,7 +26,8 @@ class AuthCubit extends Cubit<AuthState> {
     required String password,
     bool rememberMe = true,
   }) async {
-    if (email.trim().isEmpty || !email.contains('@')) {
+    final cleanEmail = email.trim();
+    if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
       emit(const AuthFailure(
         mode: AuthMode.signIn,
         errorMessage: 'Please enter a valid email address.',
@@ -39,17 +44,18 @@ class AuthCubit extends Cubit<AuthState> {
 
     emit(const AuthLoading(mode: AuthMode.signIn, message: 'Signing in to Kaku...'));
 
-    // Simulated network authentication delay
-    await Future.delayed(const Duration(milliseconds: 1400));
-
-    emit(AuthSuccess(
-      mode: AuthMode.signIn,
-      user: UserModel(
-        id: 'usr_01',
-        email: email,
-        name: email.split('@').first,
-      ),
-    ));
+    try {
+      final user = await _authRepository.login(
+        email: cleanEmail,
+        password: password,
+      );
+      emit(AuthSuccess(mode: AuthMode.signIn, user: user));
+    } catch (e) {
+      emit(AuthFailure(
+        mode: AuthMode.signIn,
+        errorMessage: e.toString(),
+      ));
+    }
   }
 
   Future<void> signUp({
@@ -57,14 +63,17 @@ class AuthCubit extends Cubit<AuthState> {
     required String email,
     required String password,
   }) async {
-    if (fullName.trim().isEmpty) {
+    final cleanName = fullName.trim();
+    final cleanEmail = email.trim();
+
+    if (cleanName.isEmpty) {
       emit(const AuthFailure(
         mode: AuthMode.signUp,
         errorMessage: 'Please enter your name.',
       ));
       return;
     }
-    if (email.trim().isEmpty || !email.contains('@')) {
+    if (cleanEmail.isEmpty || !cleanEmail.contains('@')) {
       emit(const AuthFailure(
         mode: AuthMode.signUp,
         errorMessage: 'Please enter a valid email address.',
@@ -81,30 +90,43 @@ class AuthCubit extends Cubit<AuthState> {
 
     emit(const AuthLoading(mode: AuthMode.signUp, message: 'Creating your workspace...'));
 
-    // Simulated network registration delay
-    await Future.delayed(const Duration(milliseconds: 1500));
-
-    emit(AuthSuccess(
-      mode: AuthMode.signUp,
-      user: UserModel(
-        id: 'usr_new',
-        email: email,
-        name: fullName,
-      ),
-    ));
+    try {
+      final user = await _authRepository.register(
+        name: cleanName,
+        email: cleanEmail,
+        password: password,
+        displayName: cleanName,
+      );
+      emit(AuthSuccess(mode: AuthMode.signUp, user: user));
+    } catch (e) {
+      emit(AuthFailure(
+        mode: AuthMode.signUp,
+        errorMessage: e.toString(),
+      ));
+    }
   }
 
   Future<void> signInWithSocial(String provider) async {
     emit(AuthLoading(mode: state.mode, message: 'Connecting to $provider...'));
-    await Future.delayed(const Duration(milliseconds: 1200));
-
-    emit(AuthSuccess(
-      mode: state.mode,
-      user: UserModel(
-        id: 'usr_social',
-        email: 'collaborator@kaku.workspace',
-        name: '$provider User',
-      ),
-    ));
+    final email = '${provider.toLowerCase()}.user@kaku.workspace';
+    final password = 'KakuSocialPassword123!';
+    try {
+      // Try login first
+      final user = await _authRepository.login(email: email, password: password);
+      emit(AuthSuccess(mode: state.mode, user: user));
+    } catch (_) {
+      try {
+        // If not found, register automatically
+        final user = await _authRepository.register(
+          name: '$provider User',
+          email: email,
+          password: password,
+          displayName: '$provider Explorer',
+        );
+        emit(AuthSuccess(mode: state.mode, user: user));
+      } catch (e) {
+        emit(AuthFailure(mode: state.mode, errorMessage: e.toString()));
+      }
+    }
   }
 }

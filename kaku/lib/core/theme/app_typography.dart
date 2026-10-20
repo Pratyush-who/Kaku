@@ -75,6 +75,20 @@ abstract final class AppTypography {
         color: AppColors.textPrimaryDark,
       );
 
+  static TextStyle get titleSmall => GoogleFonts.plusJakartaSans(
+        fontSize: 14.0,
+        fontWeight: FontWeight.w600,
+        letterSpacing: -0.1,
+        color: AppColors.textPrimaryDark,
+      );
+
+  static TextStyle get labelMedium => GoogleFonts.plusJakartaSans(
+        fontSize: 12.0,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.2,
+        color: AppColors.textPrimaryDark,
+      );
+
   static TextStyle get labelSmall => GoogleFonts.plusJakartaSans(
         fontSize: 11.0,
         fontWeight: FontWeight.w500,
