@@ -10,11 +10,9 @@ void main() async {
   try {
     await dotenv.load(fileName: ".env");
   } catch (_) {
-    // Fallback to default if .env not found
   }
   await ApiClient.instance.initialize();
 
-  // Set system UI overlay style for seamless obsidian dark immersion
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,

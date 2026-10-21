@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kaku-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-kaku}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - kaku_postgres_data:/var/lib/postgresql/data
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-kaku}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - kaku-network
+
+  # Lightweight Web UI for PostgreSQL (zero-config alternative to pgAdmin)
+  # Access via browser at http://localhost:8081
+  pgweb:
+    image: sosedoff/pgweb:latest
+    container_name: kaku-pgweb
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-kaku}?sslmode=disable
+    ports:
+      - "${PGWEB_PORT:-8081}:8081"
+    networks:
+      - kaku-network
+
+volumes:
+  kaku_postgres_data:
+    name: kaku_postgres_data
+
+networks:
+  kaku-network:
+    name: kaku-network

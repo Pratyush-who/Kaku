@@ -25,3 +25,7 @@ bin/
 Thumbs.db
 readme.md
 .agents
+
+# Docker local backups
+docker/backups/*.sql
+!docker/backups/.gitkeep

@@ -137,7 +137,7 @@ func main() {
 
 	log.Println("Server exiting")
 }
-
+//go:embed migrations/000001_init_schema.up.sql
 var schemaSQL string
 
 func autoMigrate(db *sql.DB) error {
