@@ -57,6 +57,7 @@ func main() {
 
 	// Handlers
 	authHandler := handlers.NewAuthHandler(repo, tokenService, cfg.BcryptCost)
+	profileHandler := handlers.NewProfileHandler(repo, tokenService, cfg.BcryptCost, "./uploads")
 	projectHandler := handlers.NewProjectHandler(repo)
 	boardHandler := handlers.NewBoardHandler(repo)
 	invitationHandler := handlers.NewInvitationHandler(repo)
@@ -76,12 +77,17 @@ func main() {
 	mux.HandleFunc("/api/v1/auth/register", authHandler.Register)
 	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
 
+	// Static file serving for uploads (avatars, attachments)
+	mux.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
+
 	// Protected Endpoints (Wrapped with AuthMiddleware)
 	authMW := middleware.AuthMiddleware(tokenService)
 
-	// User Profile Endpoints
-	mux.Handle("/api/v1/me", authMW(http.HandlerFunc(authHandler.Me)))
-	mux.Handle("/api/v1/me/password", authMW(http.HandlerFunc(authHandler.ChangePassword)))
+	// User Profile Endpoints (supports both /api/v1/me and /api/v1/profile)
+	mux.Handle("/api/v1/me", authMW(http.HandlerFunc(profileHandler.HandleMe)))
+	mux.Handle("/api/v1/me/", authMW(http.HandlerFunc(profileHandler.HandleMeSubpaths)))
+	mux.Handle("/api/v1/profile", authMW(http.HandlerFunc(profileHandler.HandleMe)))
+	mux.Handle("/api/v1/profile/", authMW(http.HandlerFunc(profileHandler.HandleMeSubpaths)))
 
 	// /api/v1/projects and /api/v1/projects/
 	mux.Handle("/api/v1/projects", authMW(http.HandlerFunc(projectHandler.HandleProjects)))
@@ -137,13 +143,22 @@ func main() {
 
 	log.Println("Server exiting")
 }
+
 //go:embed migrations/000001_init_schema.up.sql
 var schemaSQL string
+
+//go:embed migrations/000002_add_profile_fields.up.sql
+var profileFieldsSQL string
 
 func autoMigrate(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_, err := db.ExecContext(ctx, schemaSQL)
-	return err
+	if _, err := db.ExecContext(ctx, schemaSQL); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, profileFieldsSQL); err != nil {
+		return err
+	}
+	return nil
 }

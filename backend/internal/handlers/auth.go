@@ -92,6 +92,9 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Email:        req.Email,
 		PasswordHash: hashedPass,
 		DisplayName:  req.DisplayName,
+		AvatarURL:    "",
+		Bio:          "",
+		Preferences:  models.DefaultPreferences,
 	}
 
 	if err := h.repo.CreateUser(r.Context(), user); err != nil {
@@ -175,8 +178,11 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPatch, http.MethodPut:
 		var req struct {
-			Name        string `json:"name"`
-			DisplayName string `json:"displayName"`
+			Name        *string          `json:"name"`
+			DisplayName *string          `json:"displayName"`
+			AvatarURL   *string          `json:"avatarUrl"`
+			Bio         *string          `json:"bio"`
+			Preferences json.RawMessage `json:"preferences"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httputil.Error(w, http.StatusBadRequest, "Invalid request body")
@@ -189,20 +195,38 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		name := strings.TrimSpace(req.Name)
-		if name == "" {
-			name = user.Name
+		name := user.Name
+		if req.Name != nil && strings.TrimSpace(*req.Name) != "" {
+			name = strings.TrimSpace(*req.Name)
 		}
-		displayName := strings.TrimSpace(req.DisplayName)
-		if displayName == "" {
-			displayName = user.DisplayName
+		displayName := user.DisplayName
+		if req.DisplayName != nil && strings.TrimSpace(*req.DisplayName) != "" {
+			displayName = strings.TrimSpace(*req.DisplayName)
+		}
+		avatarURL := user.AvatarURL
+		if req.AvatarURL != nil {
+			avatarURL = strings.TrimSpace(*req.AvatarURL)
+		}
+		bio := user.Bio
+		if req.Bio != nil {
+			bio = strings.TrimSpace(*req.Bio)
 		}
 
-		updatedUser, err := h.repo.UpdateUserProfile(r.Context(), userID, name, displayName)
+		updatedUser, err := h.repo.UpdateUserProfile(r.Context(), userID, name, displayName, avatarURL, bio)
 		if err != nil {
 			httputil.Error(w, http.StatusInternalServerError, "Failed to update profile")
 			return
 		}
+
+		if len(req.Preferences) > 0 {
+			var testMap map[string]interface{}
+			if err := json.Unmarshal(req.Preferences, &testMap); err == nil {
+				if userWithPrefs, err := h.repo.UpdateUserPreferences(r.Context(), userID, req.Preferences); err == nil {
+					updatedUser = userWithPrefs
+				}
+			}
+		}
+
 		httputil.JSON(w, http.StatusOK, updatedUser)
 
 	default:
@@ -240,6 +264,11 @@ func (h *AuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 
 	if len(req.NewPassword) < 8 {
 		httputil.Error(w, http.StatusBadRequest, "New password must be at least 8 characters")
+		return
+	}
+
+	if req.CurrentPassword == req.NewPassword {
+		httputil.Error(w, http.StatusBadRequest, "New password must be different from current password")
 		return
 	}
 

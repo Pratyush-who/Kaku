@@ -7,15 +7,50 @@ import (
 	"github.com/google/uuid"
 )
 
+// DefaultPreferences provides standard initial settings for new accounts
+var DefaultPreferences = json.RawMessage(`{"theme":"system","grid":true,"snapToGrid":false,"emailNotifications":true}`)
+
 // User represents an authenticated account
 type User struct {
-	ID           uuid.UUID `json:"id"`
-	Name         string    `json:"name"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"-"` // Never expose in JSON
-	DisplayName  string    `json:"displayName"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	ID           uuid.UUID       `json:"id"`
+	Name         string          `json:"name"`
+	Email        string          `json:"email"`
+	PasswordHash string          `json:"-"` // Never expose in JSON
+	DisplayName  string          `json:"displayName"`
+	AvatarURL    string          `json:"avatarUrl"`
+	Bio          string          `json:"bio"`
+	Preferences  json.RawMessage `json:"preferences"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt"`
+}
+
+// UserStats represents aggregated user metrics for the profile dashboard
+type UserStats struct {
+	OwnedProjectsCount  int       `json:"ownedProjectsCount"`
+	SharedProjectsCount int       `json:"sharedProjectsCount"`
+	TotalProjectsCount  int       `json:"totalProjectsCount"`
+	CreatedBoardsCount  int       `json:"createdBoardsCount"`
+	TotalBoardsCount    int       `json:"totalBoardsCount"`
+	AccountCreatedAt    time.Time `json:"accountCreatedAt"`
+}
+
+// RecentBoard represents a board accessed or accessible by the user, with project context
+type RecentBoard struct {
+	ID          uuid.UUID   `json:"id"`
+	ProjectID   uuid.UUID   `json:"projectId"`
+	ProjectName string      `json:"projectName"`
+	Name        string      `json:"name"`
+	Revision    int64       `json:"revision"`
+	Role        ProjectRole `json:"role"`
+	CreatedBy   *uuid.UUID  `json:"createdBy,omitempty"`
+	CreatedAt   time.Time   `json:"createdAt"`
+	UpdatedAt   time.Time   `json:"updatedAt"`
+}
+
+// UserProfileResponse bundles user information along with optional stats
+type UserProfileResponse struct {
+	User  *User      `json:"user"`
+	Stats *UserStats `json:"stats,omitempty"`
 }
 
 // Project represents a workspace container

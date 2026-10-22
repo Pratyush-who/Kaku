@@ -16,8 +16,8 @@ import '../widgets/auth_tab_switcher.dart';
 import '../widgets/sign_in_form.dart';
 import '../widgets/sign_up_form.dart';
 
-/// Unified Auth Page for Sign In & Sign Up (Rule 2 & Rule 24).
-/// Composes modular sub-widgets with identical layout structure ("keep the pages identical").
+/// Unified Auth Page for Sign In & Sign Up.
+/// Composes modular sub-widgets with identical layout structure and ambient studio aura.
 class AuthPage extends StatelessWidget {
   const AuthPage({super.key, this.initialMode = AuthMode.signIn});
 
@@ -97,132 +97,180 @@ class _AuthView extends StatelessWidget {
 
         return Scaffold(
           backgroundColor: AppColors.darkCanvas,
-          body: SafeArea(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Padding(
-                padding: AppSpacing.pagePadding,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const SizedBox(height: 12.0),
+          body: Stack(
+            children: [
+              // Subtle background ambient aura
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 320,
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: const Alignment(0.0, -0.6),
+                      radius: 1.1,
+                      colors: [
+                        AppColors.accentPrimary.withValues(alpha: 0.08),
+                        AppColors.accentSecondary.withValues(alpha: 0.04),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
 
-                    // Top Bar: Brand Logo & Status Indicator
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const AppBrandLogo(size: 34.0, fontSize: 18.0),
-                        InkWell(
-                          onTap: () {
-                            ProfileSettingsModal.show(context);
-                          },
-                          borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10.0,
-                              vertical: 5.0,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.darkSurfaceElevated,
-                              borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                              border: Border.all(
-                                color: AppColors.darkBorder,
-                                width: 0.8,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
+              SafeArea(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520.0),
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: Padding(
+                        padding: AppSpacing.pagePadding,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: 12.0),
+
+                            // Top Bar: Brand Logo & Server Settings Pill
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Container(
-                                  width: 6.0,
-                                  height: 6.0,
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.accentPrimary,
-                                    shape: BoxShape.circle,
+                                const AppBrandLogo(size: 34.0, fontSize: 18.0),
+                                InkWell(
+                                  onTap: () {
+                                    ProfileSettingsModal.show(context);
+                                  },
+                                  borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 11.0,
+                                      vertical: 6.0,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.darkSurfaceElevated,
+                                      borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                                      border: Border.all(
+                                        color: AppColors.darkBorder,
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Container(
+                                          width: 7.0,
+                                          height: 7.0,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.accentPrimary,
+                                            shape: BoxShape.circle,
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: AppColors.accentPrimary.withValues(alpha: 0.6),
+                                                blurRadius: 4.0,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 7.0),
+                                        Text(
+                                          'Server Setup',
+                                          style: AppTypography.labelSmall.copyWith(
+                                            fontSize: 11.0,
+                                            color: AppColors.textSecondaryDark,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4.0),
+                                        const Icon(
+                                          Icons.settings_outlined,
+                                          size: 13.0,
+                                          color: AppColors.textTertiaryDark,
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 6.0),
-                                Text(
-                                  'Server Setup',
-                                  style: AppTypography.labelSmall.copyWith(
-                                    fontSize: 10.5,
-                                    color: AppColors.textSecondaryDark,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 4.0),
-                                const Icon(
-                                  Icons.settings_outlined,
-                                  size: 13.0,
-                                  color: AppColors.textTertiaryDark,
                                 ),
                               ],
                             ),
-                          ),
+
+                            const SizedBox(height: 16.0),
+
+                            // Floating Interactive Canvas Hero Showcase
+                            const AuthHeaderHero(),
+
+                            const SizedBox(height: 8.0),
+
+                            // Headline Title & Tagline with smooth animation
+                            AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 250),
+                              child: Column(
+                                key: ValueKey(isSignIn),
+                                children: [
+                                  Text(
+                                    isSignIn ? AppConstants.signInTitle : AppConstants.signUpTitle,
+                                    textAlign: TextAlign.center,
+                                    style: AppTypography.displayLarge.copyWith(
+                                      fontSize: 26.0,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6.0),
+                                  Text(
+                                    isSignIn
+                                        ? AppConstants.signInSubtitle
+                                        : AppConstants.signUpSubtitle,
+                                    textAlign: TextAlign.center,
+                                    style: AppTypography.bodyMedium.copyWith(
+                                      color: AppColors.textTertiaryDark,
+                                      fontSize: 14.0,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(height: 24.0),
+
+                            // Pill Tab Switcher (Sign In vs Create Account)
+                            AuthTabSwitcher(
+                              currentMode: state.mode,
+                              onChanged: (mode) =>
+                                  context.read<AuthCubit>().setMode(mode),
+                            ),
+
+                            const SizedBox(height: 24.0),
+
+                            // Identical Form Container with Smooth CrossFade
+                            AnimatedCrossFade(
+                              duration: const Duration(milliseconds: 280),
+                              firstCurve: Curves.easeOutCubic,
+                              secondCurve: Curves.easeOutCubic,
+                              sizeCurve: Curves.easeOutCubic,
+                              crossFadeState: isSignIn
+                                  ? CrossFadeState.showFirst
+                                  : CrossFadeState.showSecond,
+                              firstChild: const SignInForm(),
+                              secondChild: const SignUpForm(),
+                            ),
+
+                            const SizedBox(height: 16.0),
+
+                            // Screen Ending & Visual Polish
+                            const ScreenFooterBrand(),
+                          ],
                         ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 16.0),
-
-                    // Floating Interactive Canvas Hero Showcase
-                    const AuthHeaderHero(),
-
-                    const SizedBox(height: 8.0),
-
-                    // Headline Title & Tagline
-                    Text(
-                      isSignIn ? AppConstants.signInTitle : AppConstants.signUpTitle,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.displayLarge.copyWith(
-                        fontSize: 26.0,
                       ),
                     ),
-                    const SizedBox(height: 6.0),
-                    Text(
-                      isSignIn
-                          ? AppConstants.signInSubtitle
-                          : AppConstants.signUpSubtitle,
-                      textAlign: TextAlign.center,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: AppColors.textTertiaryDark,
-                      ),
-                    ),
-
-                    const SizedBox(height: 24.0),
-
-                    // Pill Tab Switcher (Sign In vs Create Account)
-                    AuthTabSwitcher(
-                      currentMode: state.mode,
-                      onChanged: (mode) =>
-                          context.read<AuthCubit>().setMode(mode),
-                    ),
-
-                    const SizedBox(height: 24.0),
-
-                    // Identical Form Container with Smooth CrossFade
-                    AnimatedCrossFade(
-                      duration: AppSpacing.durationMedium,
-                      firstCurve: AppSpacing.curveSmooth,
-                      secondCurve: AppSpacing.curveSmooth,
-                      crossFadeState: isSignIn
-                          ? CrossFadeState.showFirst
-                          : CrossFadeState.showSecond,
-                      firstChild: const SignInForm(),
-                      secondChild: const SignUpForm(),
-                    ),
-
-                    const SizedBox(height: 16.0),
-
-                    // Screen Ending & Visual Polish (Rule 14)
-                    const ScreenFooterBrand(),
-                  ],
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
         );
       },
     );
   }
 }
+

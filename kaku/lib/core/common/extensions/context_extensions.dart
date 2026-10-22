@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-/// Extension methods on BuildContext for quick and clean access to theme & media queries.
 extension BuildContextX on BuildContext {
   ThemeData get theme => Theme.of(this);
   ColorScheme get colorScheme => Theme.of(this).colorScheme;

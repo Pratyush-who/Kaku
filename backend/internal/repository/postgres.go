@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -33,8 +34,8 @@ func NewPostgresRepository(db *sql.DB) *PostgresRepository {
 
 func (r *PostgresRepository) CreateUser(ctx context.Context, user *models.User) error {
 	query := `
-		INSERT INTO users (id, name, email, password_hash, display_name, created_at, updated_at)
-		VALUES ($1, $2, LOWER($3), $4, $5, $6, $7)
+		INSERT INTO users (id, name, email, password_hash, display_name, avatar_url, bio, preferences, created_at, updated_at)
+		VALUES ($1, $2, LOWER($3), $4, $5, $6, $7, $8, $9, $10)
 	`
 	if user.ID == uuid.Nil {
 		user.ID = uuid.New()
@@ -42,6 +43,9 @@ func (r *PostgresRepository) CreateUser(ctx context.Context, user *models.User) 
 	now := time.Now()
 	user.CreatedAt = now
 	user.UpdatedAt = now
+	if len(user.Preferences) == 0 {
+		user.Preferences = models.DefaultPreferences
+	}
 
 	_, err := r.db.ExecContext(ctx, query,
 		user.ID,
@@ -49,6 +53,9 @@ func (r *PostgresRepository) CreateUser(ctx context.Context, user *models.User) 
 		user.Email,
 		user.PasswordHash,
 		user.DisplayName,
+		user.AvatarURL,
+		user.Bio,
+		user.Preferences,
 		user.CreatedAt,
 		user.UpdatedAt,
 	)
@@ -57,7 +64,11 @@ func (r *PostgresRepository) CreateUser(ctx context.Context, user *models.User) 
 
 func (r *PostgresRepository) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	query := `
-		SELECT id, name, email, password_hash, display_name, created_at, updated_at
+		SELECT id, name, email, password_hash, display_name,
+		       COALESCE(avatar_url, ''),
+		       COALESCE(bio, ''),
+		       COALESCE(preferences, '{"theme":"system","grid":true,"snapToGrid":false,"emailNotifications":true}'::jsonb),
+		       created_at, updated_at
 		FROM users
 		WHERE email = LOWER($1)
 	`
@@ -68,6 +79,9 @@ func (r *PostgresRepository) GetUserByEmail(ctx context.Context, email string) (
 		&user.Email,
 		&user.PasswordHash,
 		&user.DisplayName,
+		&user.AvatarURL,
+		&user.Bio,
+		&user.Preferences,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -77,12 +91,19 @@ func (r *PostgresRepository) GetUserByEmail(ctx context.Context, email string) (
 	if err != nil {
 		return nil, err
 	}
+	if len(user.Preferences) == 0 {
+		user.Preferences = models.DefaultPreferences
+	}
 	return user, nil
 }
 
 func (r *PostgresRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	query := `
-		SELECT id, name, email, password_hash, display_name, created_at, updated_at
+		SELECT id, name, email, password_hash, display_name,
+		       COALESCE(avatar_url, ''),
+		       COALESCE(bio, ''),
+		       COALESCE(preferences, '{"theme":"system","grid":true,"snapToGrid":false,"emailNotifications":true}'::jsonb),
+		       created_at, updated_at
 		FROM users
 		WHERE id = $1
 	`
@@ -93,6 +114,9 @@ func (r *PostgresRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*mo
 		&user.Email,
 		&user.PasswordHash,
 		&user.DisplayName,
+		&user.AvatarURL,
+		&user.Bio,
+		&user.Preferences,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -101,6 +125,9 @@ func (r *PostgresRepository) GetUserByID(ctx context.Context, id uuid.UUID) (*mo
 	}
 	if err != nil {
 		return nil, err
+	}
+	if len(user.Preferences) == 0 {
+		user.Preferences = models.DefaultPreferences
 	}
 	return user, nil
 }
@@ -112,20 +139,27 @@ func (r *PostgresRepository) UserExistsByEmail(ctx context.Context, email string
 	return exists, err
 }
 
-func (r *PostgresRepository) UpdateUserProfile(ctx context.Context, userID uuid.UUID, name, displayName string) (*models.User, error) {
+func (r *PostgresRepository) UpdateUserProfile(ctx context.Context, userID uuid.UUID, name, displayName, avatarURL, bio string) (*models.User, error) {
 	query := `
 		UPDATE users
-		SET name = $1, display_name = $2, updated_at = now()
-		WHERE id = $3
-		RETURNING id, name, email, password_hash, display_name, created_at, updated_at
+		SET name = $1, display_name = $2, avatar_url = $3, bio = $4, updated_at = now()
+		WHERE id = $5
+		RETURNING id, name, email, password_hash, display_name,
+		          COALESCE(avatar_url, ''),
+		          COALESCE(bio, ''),
+		          COALESCE(preferences, '{"theme":"system","grid":true,"snapToGrid":false,"emailNotifications":true}'::jsonb),
+		          created_at, updated_at
 	`
 	user := &models.User{}
-	err := r.db.QueryRowContext(ctx, query, name, displayName, userID).Scan(
+	err := r.db.QueryRowContext(ctx, query, name, displayName, avatarURL, bio, userID).Scan(
 		&user.ID,
 		&user.Name,
 		&user.Email,
 		&user.PasswordHash,
 		&user.DisplayName,
+		&user.AvatarURL,
+		&user.Bio,
+		&user.Preferences,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -134,6 +168,117 @@ func (r *PostgresRepository) UpdateUserProfile(ctx context.Context, userID uuid.
 	}
 	if err != nil {
 		return nil, err
+	}
+	if len(user.Preferences) == 0 {
+		user.Preferences = models.DefaultPreferences
+	}
+	return user, nil
+}
+
+func (r *PostgresRepository) UpdateUserAvatar(ctx context.Context, userID uuid.UUID, avatarURL string) (*models.User, error) {
+	query := `
+		UPDATE users
+		SET avatar_url = $1, updated_at = now()
+		WHERE id = $2
+		RETURNING id, name, email, password_hash, display_name,
+		          COALESCE(avatar_url, ''),
+		          COALESCE(bio, ''),
+		          COALESCE(preferences, '{"theme":"system","grid":true,"snapToGrid":false,"emailNotifications":true}'::jsonb),
+		          created_at, updated_at
+	`
+	user := &models.User{}
+	err := r.db.QueryRowContext(ctx, query, avatarURL, userID).Scan(
+		&user.ID,
+		&user.Name,
+		&user.Email,
+		&user.PasswordHash,
+		&user.DisplayName,
+		&user.AvatarURL,
+		&user.Bio,
+		&user.Preferences,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(user.Preferences) == 0 {
+		user.Preferences = models.DefaultPreferences
+	}
+	return user, nil
+}
+
+func (r *PostgresRepository) UpdateUserPreferences(ctx context.Context, userID uuid.UUID, preferences json.RawMessage) (*models.User, error) {
+	query := `
+		UPDATE users
+		SET preferences = COALESCE(preferences, '{}'::jsonb) || $1::jsonb, updated_at = now()
+		WHERE id = $2
+		RETURNING id, name, email, password_hash, display_name,
+		          COALESCE(avatar_url, ''),
+		          COALESCE(bio, ''),
+		          COALESCE(preferences, '{"theme":"system","grid":true,"snapToGrid":false,"emailNotifications":true}'::jsonb),
+		          created_at, updated_at
+	`
+	user := &models.User{}
+	err := r.db.QueryRowContext(ctx, query, preferences, userID).Scan(
+		&user.ID,
+		&user.Name,
+		&user.Email,
+		&user.PasswordHash,
+		&user.DisplayName,
+		&user.AvatarURL,
+		&user.Bio,
+		&user.Preferences,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(user.Preferences) == 0 {
+		user.Preferences = models.DefaultPreferences
+	}
+	return user, nil
+}
+
+func (r *PostgresRepository) UpdateUserEmail(ctx context.Context, userID uuid.UUID, newEmail string) (*models.User, error) {
+	query := `
+		UPDATE users
+		SET email = LOWER($1), updated_at = now()
+		WHERE id = $2
+		RETURNING id, name, email, password_hash, display_name,
+		          COALESCE(avatar_url, ''),
+		          COALESCE(bio, ''),
+		          COALESCE(preferences, '{"theme":"system","grid":true,"snapToGrid":false,"emailNotifications":true}'::jsonb),
+		          created_at, updated_at
+	`
+	user := &models.User{}
+	err := r.db.QueryRowContext(ctx, query, newEmail, userID).Scan(
+		&user.ID,
+		&user.Name,
+		&user.Email,
+		&user.PasswordHash,
+		&user.DisplayName,
+		&user.AvatarURL,
+		&user.Bio,
+		&user.Preferences,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(user.Preferences) == 0 {
+		user.Preferences = models.DefaultPreferences
 	}
 	return user, nil
 }
@@ -153,6 +298,145 @@ func (r *PostgresRepository) UpdateUserPassword(ctx context.Context, userID uuid
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *PostgresRepository) DeleteUser(ctx context.Context, userID uuid.UUID) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 1. Delete all projects owned by the user (cascades to project_members, boards, invitations)
+	deleteOwnedProjects := `DELETE FROM projects WHERE owner_id = $1`
+	if _, err := tx.ExecContext(ctx, deleteOwnedProjects, userID); err != nil {
+		return err
+	}
+
+	// 2. Remove memberships from projects user didn't own
+	deleteMemberships := `DELETE FROM project_members WHERE user_id = $1`
+	if _, err := tx.ExecContext(ctx, deleteMemberships, userID); err != nil {
+		return err
+	}
+
+	// 3. Clear created_by on any remaining boards
+	updateBoardCreators := `UPDATE boards SET created_by = NULL WHERE created_by = $1`
+	if _, err := tx.ExecContext(ctx, updateBoardCreators, userID); err != nil {
+		return err
+	}
+
+	// 4. Clear created_by on any remaining invitations
+	updateInvCreators := `UPDATE invitations SET created_by = NULL WHERE created_by = $1`
+	if _, err := tx.ExecContext(ctx, updateInvCreators, userID); err != nil {
+		return err
+	}
+
+	// 5. Delete the user
+	deleteUser := `DELETE FROM users WHERE id = $1`
+	res, err := tx.ExecContext(ctx, deleteUser, userID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+
+	return tx.Commit()
+}
+
+func (r *PostgresRepository) GetUserStats(ctx context.Context, userID uuid.UUID) (*models.UserStats, error) {
+	query := `
+		SELECT
+			(SELECT COUNT(*) FROM projects WHERE owner_id = $1) AS owned_projects_count,
+			(SELECT COUNT(*) FROM project_members WHERE user_id = $1 AND role != 'owner') AS shared_projects_count,
+			(SELECT COUNT(*) FROM project_members WHERE user_id = $1) AS total_projects_count,
+			(SELECT COUNT(*) FROM boards WHERE created_by = $1) AS created_boards_count,
+			(SELECT COUNT(*) FROM boards b INNER JOIN project_members pm ON b.project_id = pm.project_id WHERE pm.user_id = $1) AS total_boards_count,
+			(SELECT created_at FROM users WHERE id = $1) AS account_created_at
+	`
+	stats := &models.UserStats{}
+	var createdAt sql.NullTime
+	err := r.db.QueryRowContext(ctx, query, userID).Scan(
+		&stats.OwnedProjectsCount,
+		&stats.SharedProjectsCount,
+		&stats.TotalProjectsCount,
+		&stats.CreatedBoardsCount,
+		&stats.TotalBoardsCount,
+		&createdAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if createdAt.Valid {
+		stats.AccountCreatedAt = createdAt.Time
+	}
+	return stats, nil
+}
+
+func (r *PostgresRepository) ListUserRecentBoards(ctx context.Context, userID uuid.UUID, limit, offset int) ([]models.RecentBoard, int, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	countQuery := `
+		SELECT COUNT(*)
+		FROM boards b
+		INNER JOIN projects p ON b.project_id = p.id
+		INNER JOIN project_members pm ON p.id = pm.project_id
+		WHERE pm.user_id = $1
+	`
+	var total int
+	if err := r.db.QueryRowContext(ctx, countQuery, userID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	query := `
+		SELECT b.id, b.project_id, p.name AS project_name, b.name, b.revision, pm.role, b.created_by, b.created_at, b.updated_at
+		FROM boards b
+		INNER JOIN projects p ON b.project_id = p.id
+		INNER JOIN project_members pm ON p.id = pm.project_id
+		WHERE pm.user_id = $1
+		ORDER BY b.updated_at DESC
+		LIMIT $2 OFFSET $3
+	`
+	rows, err := r.db.QueryContext(ctx, query, userID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var boards []models.RecentBoard
+	for rows.Next() {
+		var b models.RecentBoard
+		if err := rows.Scan(
+			&b.ID,
+			&b.ProjectID,
+			&b.ProjectName,
+			&b.Name,
+			&b.Revision,
+			&b.Role,
+			&b.CreatedBy,
+			&b.CreatedAt,
+			&b.UpdatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		boards = append(boards, b)
+	}
+	if boards == nil {
+		boards = []models.RecentBoard{}
+	}
+	return boards, total, nil
 }
 
 // Project methods
@@ -347,7 +631,11 @@ func (r *PostgresRepository) GetUserProjectRole(ctx context.Context, projectID, 
 func (r *PostgresRepository) ListProjectMembers(ctx context.Context, projectID uuid.UUID) ([]models.ProjectMember, error) {
 	query := `
 		SELECT pm.project_id, pm.user_id, pm.role, pm.joined_at,
-		       u.name, u.email, u.display_name, u.created_at, u.updated_at
+		       u.name, u.email, u.display_name,
+		       COALESCE(u.avatar_url, ''),
+		       COALESCE(u.bio, ''),
+		       COALESCE(u.preferences, '{"theme":"system","grid":true,"snapToGrid":false,"emailNotifications":true}'::jsonb),
+		       u.created_at, u.updated_at
 		FROM project_members pm
 		INNER JOIN users u ON pm.user_id = u.id
 		WHERE pm.project_id = $1
@@ -371,6 +659,9 @@ func (r *PostgresRepository) ListProjectMembers(ctx context.Context, projectID u
 			&u.Name,
 			&u.Email,
 			&u.DisplayName,
+			&u.AvatarURL,
+			&u.Bio,
+			&u.Preferences,
 			&u.CreatedAt,
 			&u.UpdatedAt,
 		)
@@ -378,6 +669,9 @@ func (r *PostgresRepository) ListProjectMembers(ctx context.Context, projectID u
 			return nil, err
 		}
 		u.ID = m.UserID
+		if len(u.Preferences) == 0 {
+			u.Preferences = models.DefaultPreferences
+		}
 		m.User = &u
 		members = append(members, m)
 	}

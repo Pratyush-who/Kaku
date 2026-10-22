@@ -4,7 +4,6 @@ import 'app.dart';
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/network/api_client.dart';
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {

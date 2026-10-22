@@ -11,9 +11,17 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     display_name VARCHAR(255) NOT NULL,
+    avatar_url TEXT NOT NULL DEFAULT '',
+    bio TEXT NOT NULL DEFAULT '',
+    preferences JSONB NOT NULL DEFAULT '{"theme":"system","grid":true,"snapToGrid":false,"emailNotifications":true}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Ensure columns exist for existing tables
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{"theme":"system","grid":true,"snapToGrid":false,"emailNotifications":true}'::jsonb;
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(LOWER(email));
 

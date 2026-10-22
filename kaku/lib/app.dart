@@ -3,7 +3,6 @@ import 'core/common/constants/app_constants.dart';
 import 'core/routes/routes.dart';
 import 'core/theme/themes.dart';
 
-/// Root application widget configuring Theme, Router, and global wrappers (Rule 5 & Rule 12).
 class KakuApp extends StatelessWidget {
   const KakuApp({super.key});
 
@@ -12,7 +11,7 @@ class KakuApp extends StatelessWidget {
     return MaterialApp.router(
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.dark, // Default Obsidian Studio
+      themeMode: ThemeMode.dark, 
       theme: AppThemes.lightTheme,
       darkTheme: AppThemes.darkTheme,
       routerConfig: appRouter,

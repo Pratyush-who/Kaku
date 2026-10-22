@@ -13,6 +13,11 @@ import '../../../profile/presentation/widgets/profile_settings_modal.dart';
 import '../cubit/projects_cubit.dart';
 import '../cubit/projects_state.dart';
 
+enum ProjectFilter { all, owned, shared }
+
+/// Home Screen for Kaku: Creative Workspace Dashboard.
+/// Features workspace metrics command center, role filtering, blueprint canvas cards,
+/// and obsidian studio modals.
 class ProjectsPage extends StatelessWidget {
   const ProjectsPage({super.key});
 
@@ -37,6 +42,7 @@ class _ProjectsViewState extends State<_ProjectsView> {
   final _authRepo = AuthRepository();
   UserModel? _currentUser;
   bool _serverHealthy = false;
+  ProjectFilter _selectedFilter = ProjectFilter.all;
 
   @override
   void initState() {
@@ -65,50 +71,160 @@ class _ProjectsViewState extends State<_ProjectsView> {
     }
   }
 
+  String _formatRelativeTime(DateTime? date) {
+    if (date == null) return 'Recently';
+    final now = DateTime.now();
+    final diff = now.difference(date);
+    if (diff.inDays > 30) {
+      return '${date.day}/${date.month}/${date.year}';
+    } else if (diff.inDays >= 1) {
+      return '${diff.inDays}d ago';
+    } else if (diff.inHours >= 1) {
+      return '${diff.inHours}h ago';
+    } else if (diff.inMinutes >= 1) {
+      return '${diff.inMinutes}m ago';
+    } else {
+      return 'Just now';
+    }
+  }
+
   void _showCreateProjectDialog() {
     final nameCtrl = TextEditingController();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.darkSurfaceCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSpacing.radiusLg)),
-        title: Text('Create New Project', style: AppTypography.titleLarge),
-        content: TextField(
-          controller: nameCtrl,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: 'e.g. Design Systems, Wireframes',
-            hintStyle: TextStyle(color: AppColors.textTertiaryDark),
-            filled: true,
-            fillColor: AppColors.darkSurface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12.0),
-              borderSide: const BorderSide(color: AppColors.darkBorder),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: 440.0,
+          padding: const EdgeInsets.all(24.0),
+          decoration: BoxDecoration(
+            color: AppColors.darkSurfaceCard,
+            borderRadius: BorderRadius.circular(24.0),
+            border: Border.all(
+              color: AppColors.accentPrimary.withValues(alpha: 0.3),
+              width: 1.2,
             ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.accentPrimary.withValues(alpha: 0.15),
+                blurRadius: 24.0,
+                spreadRadius: 1.0,
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.6),
+                blurRadius: 16.0,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10.0),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentPrimary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12.0),
+                      border: Border.all(
+                        color: AppColors.accentPrimary.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: const Icon(Icons.create_new_folder_outlined,
+                        color: AppColors.accentPrimary, size: 20.0),
+                  ),
+                  const SizedBox(width: 12.0),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Create New Project', style: AppTypography.titleLarge),
+                        Text(
+                          'A workspace for infinite collaborative boards',
+                          style: AppTypography.bodySmall
+                              .copyWith(color: AppColors.textTertiaryDark),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20.0),
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 14.5),
+                decoration: InputDecoration(
+                  hintText: 'e.g. Design Systems, Wireframes, Mobile UI',
+                  hintStyle: const TextStyle(
+                      color: AppColors.textTertiaryDark, fontSize: 13.5),
+                  prefixIcon: const Icon(Icons.edit_note_rounded,
+                      color: AppColors.textTertiaryDark),
+                  filled: true,
+                  fillColor: AppColors.darkSurface,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16.0),
+                    borderSide: const BorderSide(color: AppColors.darkBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16.0),
+                    borderSide: const BorderSide(
+                        color: AppColors.accentPrimary, width: 1.5),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24.0),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.textSecondaryDark,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16.0, vertical: 12.0),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 10.0),
+                  ElevatedButton(
+                    onPressed: () {
+                      final name = nameCtrl.text.trim();
+                      if (name.isNotEmpty) {
+                        context.read<ProjectsCubit>().createProject(name);
+                        Navigator.of(ctx).pop();
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accentPrimary,
+                      foregroundColor: const Color(0xFF090B10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20.0, vertical: 12.0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.radiusPill),
+                      ),
+                      elevation: 4.0,
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add_rounded, size: 18.0),
+                        SizedBox(width: 6.0),
+                        Text('Create Project',
+                            style: TextStyle(fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondaryDark)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final name = nameCtrl.text.trim();
-              if (name.isNotEmpty) {
-                context.read<ProjectsCubit>().createProject(name);
-                Navigator.of(ctx).pop();
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accentPrimary,
-              foregroundColor: Colors.black,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSpacing.radiusPill)),
-            ),
-            child: const Text('Create Project', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
       ),
     );
   }
@@ -117,71 +233,155 @@ class _ProjectsViewState extends State<_ProjectsView> {
     final tokenCtrl = TextEditingController();
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.darkSurfaceCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSpacing.radiusLg)),
-        title: Text('Accept Invitation', style: AppTypography.titleLarge),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Paste the invitation token or hash shared by the project collaborator.',
-              style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondaryDark),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: 440.0,
+          padding: const EdgeInsets.all(24.0),
+          decoration: BoxDecoration(
+            color: AppColors.darkSurfaceCard,
+            borderRadius: BorderRadius.circular(24.0),
+            border: Border.all(
+              color: AppColors.accentSecondary.withValues(alpha: 0.35),
+              width: 1.2,
             ),
-            const SizedBox(height: 12.0),
-            TextField(
-              controller: tokenCtrl,
-              autofocus: true,
-              style: const TextStyle(color: Colors.white, fontSize: 13.0),
-              decoration: InputDecoration(
-                hintText: 'Paste token hex...',
-                hintStyle: TextStyle(color: AppColors.textTertiaryDark),
-                filled: true,
-                fillColor: AppColors.darkSurface,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12.0),
-                  borderSide: const BorderSide(color: AppColors.darkBorder),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.accentSecondary.withValues(alpha: 0.15),
+                blurRadius: 24.0,
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.6),
+                blurRadius: 16.0,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10.0),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentSecondary.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(12.0),
+                      border: Border.all(
+                        color: AppColors.accentSecondary.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: const Icon(Icons.link_rounded,
+                        color: AppColors.accentCyan, size: 20.0),
+                  ),
+                  const SizedBox(width: 12.0),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Join Workspace', style: AppTypography.titleLarge),
+                        Text(
+                          'Paste an invitation token or secret code',
+                          style: AppTypography.bodySmall
+                              .copyWith(color: AppColors.textTertiaryDark),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18.0),
+              TextField(
+                controller: tokenCtrl,
+                autofocus: true,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13.5,
+                    fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  hintText: 'Paste token hex (e.g. a7f29b...)',
+                  hintStyle: const TextStyle(
+                      color: AppColors.textTertiaryDark, fontSize: 13.0),
+                  prefixIcon: const Icon(Icons.key_rounded,
+                      color: AppColors.textTertiaryDark, size: 18.0),
+                  filled: true,
+                  fillColor: AppColors.darkSurface,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16.0),
+                    borderSide: const BorderSide(color: AppColors.darkBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16.0),
+                    borderSide: const BorderSide(
+                        color: AppColors.accentCyan, width: 1.5),
+                  ),
                 ),
               ),
-            ),
-          ],
+              const SizedBox(height: 24.0),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.textSecondaryDark,
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 10.0),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final token = tokenCtrl.text.trim();
+                      if (token.isNotEmpty) {
+                        final messenger = ScaffoldMessenger.of(context);
+                        try {
+                          final msg = await context
+                              .read<ProjectsCubit>()
+                              .acceptInvitationToken(token);
+                          if (ctx.mounted) {
+                            Navigator.of(ctx).pop();
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(msg),
+                                backgroundColor: AppColors.success,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text('Error: $e'),
+                                backgroundColor: AppColors.error,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          }
+                        }
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accentSecondary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20.0, vertical: 12.0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.radiusPill),
+                      ),
+                    ),
+                    child: const Text('Accept & Join',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondaryDark)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final token = tokenCtrl.text.trim();
-              if (token.isNotEmpty) {
-                final messenger = ScaffoldMessenger.of(context);
-                try {
-                  final msg = await context.read<ProjectsCubit>().acceptInvitationToken(token);
-                  if (ctx.mounted) {
-                    Navigator.of(ctx).pop();
-                    messenger.showSnackBar(
-                      SnackBar(content: Text(msg), backgroundColor: AppColors.success),
-                    );
-                  }
-                } catch (e) {
-                  if (ctx.mounted) {
-                    messenger.showSnackBar(
-                      SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
-                    );
-                  }
-                }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accentSecondary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSpacing.radiusPill)),
-            ),
-            child: const Text('Accept & Join', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
       ),
     );
   }
@@ -190,43 +390,72 @@ class _ProjectsViewState extends State<_ProjectsView> {
     final nameCtrl = TextEditingController(text: project.name);
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.darkSurfaceCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSpacing.radiusLg)),
-        title: Text('Rename Project', style: AppTypography.titleLarge),
-        content: TextField(
-          controller: nameCtrl,
-          autofocus: true,
-          style: const TextStyle(color: Colors.white),
-          decoration: InputDecoration(
-            hintText: 'Project name',
-            filled: true,
-            fillColor: AppColors.darkSurface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12.0),
-            ),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: 420.0,
+          padding: const EdgeInsets.all(24.0),
+          decoration: BoxDecoration(
+            color: AppColors.darkSurfaceCard,
+            borderRadius: BorderRadius.circular(24.0),
+            border: Border.all(color: AppColors.darkBorder),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Rename Project', style: AppTypography.titleLarge),
+              const SizedBox(height: 16.0),
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Project name',
+                  filled: true,
+                  fillColor: AppColors.darkSurface,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14.0),
+                    borderSide: const BorderSide(color: AppColors.darkBorder),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20.0),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Cancel',
+                        style: TextStyle(color: AppColors.textSecondaryDark)),
+                  ),
+                  const SizedBox(width: 8.0),
+                  ElevatedButton(
+                    onPressed: () {
+                      final name = nameCtrl.text.trim();
+                      if (name.isNotEmpty) {
+                        context
+                            .read<ProjectsCubit>()
+                            .updateProjectName(project.id, name);
+                        Navigator.of(ctx).pop();
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accentPrimary,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.radiusPill),
+                      ),
+                    ),
+                    child: const Text('Save Changes',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondaryDark)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final name = nameCtrl.text.trim();
-              if (name.isNotEmpty) {
-                context.read<ProjectsCubit>().updateProjectName(project.id, name);
-                Navigator.of(ctx).pop();
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accentPrimary,
-              foregroundColor: Colors.black,
-            ),
-            child: const Text('Save'),
-          ),
-        ],
       ),
     );
   }
@@ -234,31 +463,77 @@ class _ProjectsViewState extends State<_ProjectsView> {
   void _confirmDeleteDialog(ProjectModel project) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.darkSurfaceCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSpacing.radiusLg)),
-        title: const Text('Delete Project', style: TextStyle(color: AppColors.error)),
-        content: Text(
-          'Are you sure you want to delete "${project.name}"? All boards and invitations will be permanently removed.',
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondaryDark)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              context.read<ProjectsCubit>().deleteProject(project.id);
-              Navigator.of(ctx).pop();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: Colors.white,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          width: 420.0,
+          padding: const EdgeInsets.all(24.0),
+          decoration: BoxDecoration(
+            color: AppColors.darkSurfaceCard,
+            borderRadius: BorderRadius.circular(24.0),
+            border: Border.all(
+              color: AppColors.error.withValues(alpha: 0.4),
+              width: 1.2,
             ),
-            child: const Text('Delete Permanently'),
           ),
-        ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8.0),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.delete_outline_rounded,
+                        color: AppColors.error, size: 22.0),
+                  ),
+                  const SizedBox(width: 12.0),
+                  Text('Delete Project',
+                      style: AppTypography.titleLarge
+                          .copyWith(color: AppColors.error)),
+                ],
+              ),
+              const SizedBox(height: 12.0),
+              Text(
+                'Are you sure you want to permanently delete "${project.name}"? All boards and drawing layers will be lost.',
+                style: AppTypography.bodySmall
+                    .copyWith(color: AppColors.textSecondaryDark),
+              ),
+              const SizedBox(height: 24.0),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Cancel',
+                        style: TextStyle(color: AppColors.textSecondaryDark)),
+                  ),
+                  const SizedBox(width: 8.0),
+                  ElevatedButton(
+                    onPressed: () {
+                      context.read<ProjectsCubit>().deleteProject(project.id);
+                      Navigator.of(ctx).pop();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.error,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.radiusPill),
+                      ),
+                    ),
+                    child: const Text('Delete Permanently',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -275,9 +550,10 @@ class _ProjectsViewState extends State<_ProjectsView> {
                 SnackBar(
                   content: Text(state.statusMessage!),
                   behavior: SnackBarBehavior.floating,
-                  backgroundColor: state.statusMessage!.toLowerCase().contains('error')
-                      ? AppColors.error
-                      : AppColors.success,
+                  backgroundColor:
+                      state.statusMessage!.toLowerCase().contains('error')
+                          ? AppColors.error
+                          : AppColors.success,
                 ),
               );
             }
@@ -291,21 +567,23 @@ class _ProjectsViewState extends State<_ProjectsView> {
               color: AppColors.accentPrimary,
               backgroundColor: AppColors.darkSurfaceCard,
               child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics()),
                 slivers: [
-                  // App Bar
+                  // App Bar with Brand Logo and Live Radar Status
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 8.0),
+                      padding: const EdgeInsets.fromLTRB(24.0, 16.0, 24.0, 10.0),
                       child: Row(
                         children: [
-                          const AppBrandLogo(size: 32.0, fontSize: 17.0),
+                          const AppBrandLogo(size: 34.0, fontSize: 18.0),
                           const Spacer(),
-                          // Server Status Dot
+
+                          // Server Status Dot with glowing radar ping
                           Tooltip(
                             message: _serverHealthy
-                                ? 'Backend Online (${ApiClient.instance.baseUrl})'
-                                : 'Backend Offline (${ApiClient.instance.baseUrl})',
+                                ? 'Live Sync Active (${ApiClient.instance.baseUrl})'
+                                : 'Offline / Standalone Mode',
                             child: InkWell(
                               onTap: () {
                                 ProfileSettingsModal.show(
@@ -317,13 +595,17 @@ class _ProjectsViewState extends State<_ProjectsView> {
                                   },
                                 );
                               },
-                              borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                              borderRadius:
+                                  BorderRadius.circular(AppSpacing.radiusPill),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 5.0),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 11.0, vertical: 6.0),
                                 decoration: BoxDecoration(
                                   color: AppColors.darkSurfaceElevated,
-                                  borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                                  border: Border.all(color: AppColors.darkBorder, width: 0.8),
+                                  borderRadius: BorderRadius.circular(
+                                      AppSpacing.radiusPill),
+                                  border: Border.all(
+                                      color: AppColors.darkBorder, width: 0.8),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -332,16 +614,31 @@ class _ProjectsViewState extends State<_ProjectsView> {
                                       width: 7.0,
                                       height: 7.0,
                                       decoration: BoxDecoration(
-                                        color: _serverHealthy ? AppColors.accentPrimary : AppColors.error,
+                                        color: _serverHealthy
+                                            ? AppColors.accentPrimary
+                                            : AppColors.error,
                                         shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: (_serverHealthy
+                                                    ? AppColors.accentPrimary
+                                                    : AppColors.error)
+                                                .withValues(alpha: 0.6),
+                                            blurRadius: 5.0,
+                                            spreadRadius: 1.0,
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                    const SizedBox(width: 6.0),
+                                    const SizedBox(width: 7.0),
                                     Text(
                                       _serverHealthy ? 'Live API' : 'Offline',
                                       style: AppTypography.labelSmall.copyWith(
                                         fontSize: 11.0,
-                                        color: AppColors.textSecondaryDark,
+                                        fontWeight: FontWeight.w600,
+                                        color: _serverHealthy
+                                            ? AppColors.textPrimaryDark
+                                            : AppColors.textTertiaryDark,
                                       ),
                                     ),
                                   ],
@@ -350,30 +647,10 @@ class _ProjectsViewState extends State<_ProjectsView> {
                             ),
                           ),
                           const SizedBox(width: 10.0),
-                          // User Settings Avatar
-                          IconButton(
-                            icon: Container(
-                              width: 34.0,
-                              height: 34.0,
-                              decoration: const BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: AppColors.accentGlowGradient,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  (_currentUser?.displayName.isNotEmpty == true
-                                          ? _currentUser!.displayName[0]
-                                          : 'K')
-                                      .toUpperCase(),
-                                  style: const TextStyle(
-                                    color: Colors.black,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14.0,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            onPressed: () {
+
+                          // User Profile Avatar
+                          InkWell(
+                            onTap: () {
                               ProfileSettingsModal.show(
                                 context,
                                 currentUser: _currentUser,
@@ -383,49 +660,108 @@ class _ProjectsViewState extends State<_ProjectsView> {
                                 },
                               );
                             },
+                            borderRadius: BorderRadius.circular(20.0),
+                            child: Container(
+                              width: 36.0,
+                              height: 36.0,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: AppColors.primaryGradient,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.accentPrimary
+                                        .withValues(alpha: 0.25),
+                                    blurRadius: 8.0,
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  (_currentUser?.displayName.isNotEmpty == true
+                                          ? _currentUser!.displayName[0]
+                                          : 'K')
+                                      .toUpperCase(),
+                                  style: const TextStyle(
+                                    color: Color(0xFF090B10),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14.5,
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     ),
                   ),
 
-                  // Welcome Banner & Quick Action Buttons
+                  // Welcome Header, Metrics Command Center & Actions
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24.0, vertical: 8.0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // Welcome & Tagline
                           Text(
                             'Welcome back, ${_currentUser?.displayName ?? 'Creator'}',
-                            style: AppTypography.displayLarge.copyWith(fontSize: 24.0),
+                            style: AppTypography.displayLarge
+                                .copyWith(fontSize: 25.0, letterSpacing: -0.5),
                           ),
                           const SizedBox(height: 4.0),
                           Text(
                             'Organize your sketches, wireframes, and collaborative boards.',
-                            style: AppTypography.bodySmall.copyWith(color: AppColors.textTertiaryDark),
+                            style: AppTypography.bodySmall
+                                .copyWith(color: AppColors.textTertiaryDark),
                           ),
                           const SizedBox(height: 18.0),
 
-                          // Action Buttons Row
+                          // Creative Workspace Metrics Command Center
+                          if (state is ProjectsLoaded)
+                            _buildWorkspaceMetrics(state.projects),
+
+                          const SizedBox(height: 18.0),
+
+                          // Action Buttons Row (New Project & Join)
                           Row(
                             children: [
                               Expanded(
                                 flex: 3,
-                                child: ElevatedButton.icon(
-                                  onPressed: _showCreateProjectDialog,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.accentPrimary,
-                                    foregroundColor: Colors.black,
-                                    padding: const EdgeInsets.symmetric(vertical: 14.0),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                                    ),
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(
+                                        AppSpacing.radiusPill),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppColors.accentPrimary
+                                            .withValues(alpha: 0.28),
+                                        blurRadius: 14.0,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
                                   ),
-                                  icon: const Icon(Icons.add_rounded, size: 20.0),
-                                  label: const Text(
-                                    'New Project',
-                                    style: TextStyle(fontWeight: FontWeight.w700),
+                                  child: ElevatedButton.icon(
+                                    onPressed: _showCreateProjectDialog,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.accentPrimary,
+                                      foregroundColor: const Color(0xFF090B10),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14.0),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(
+                                            AppSpacing.radiusPill),
+                                      ),
+                                      elevation: 0,
+                                    ),
+                                    icon: const Icon(Icons.add_rounded,
+                                        size: 20.0),
+                                    label: const Text(
+                                      'New Project',
+                                      style: TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 14.0),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -435,69 +771,95 @@ class _ProjectsViewState extends State<_ProjectsView> {
                                 child: OutlinedButton.icon(
                                   onPressed: _showJoinWithTokenDialog,
                                   style: OutlinedButton.styleFrom(
-                                    side: const BorderSide(color: AppColors.darkBorder),
+                                    side: const BorderSide(
+                                        color: AppColors.darkBorder,
+                                        width: 1.2),
+                                    backgroundColor:
+                                        AppColors.darkSurfaceElevated,
                                     foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 14.0),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 14.0),
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+                                      borderRadius: BorderRadius.circular(
+                                          AppSpacing.radiusPill),
                                     ),
                                   ),
-                                  icon: const Icon(Icons.link_rounded, size: 18.0, color: AppColors.accentCyan),
-                                  label: const Text('Join', style: TextStyle(fontSize: 13.0)),
+                                  icon: const Icon(Icons.link_rounded,
+                                      size: 18.0,
+                                      color: AppColors.accentCyan),
+                                  label: const Text('Join',
+                                      style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w600)),
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 18.0),
+                          const SizedBox(height: 16.0),
 
                           // Search Bar
                           TextField(
                             controller: _searchController,
-                            onChanged: (val) => context.read<ProjectsCubit>().updateSearchQuery(val),
-                            style: const TextStyle(color: Colors.white, fontSize: 14.0),
+                            onChanged: (val) => context
+                                .read<ProjectsCubit>()
+                                .updateSearchQuery(val),
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 14.0),
                             decoration: InputDecoration(
                               hintText: 'Search projects...',
-                              hintStyle: TextStyle(color: AppColors.textTertiaryDark, fontSize: 13.5),
-                              prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textTertiaryDark, size: 20.0),
+                              hintStyle: const TextStyle(
+                                  color: AppColors.textTertiaryDark,
+                                  fontSize: 13.5),
+                              prefixIcon: const Icon(Icons.search_rounded,
+                                  color: AppColors.textTertiaryDark, size: 20.0),
                               suffixIcon: _searchController.text.isNotEmpty
                                   ? IconButton(
                                       icon: const Icon(Icons.clear, size: 18.0),
                                       onPressed: () {
                                         _searchController.clear();
-                                        context.read<ProjectsCubit>().updateSearchQuery('');
+                                        context
+                                            .read<ProjectsCubit>()
+                                            .updateSearchQuery('');
                                       },
                                     )
                                   : null,
                               filled: true,
                               fillColor: AppColors.darkSurface,
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16.0, vertical: 12.0),
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                                borderSide: const BorderSide(color: AppColors.darkBorder),
+                                borderRadius: BorderRadius.circular(
+                                    AppSpacing.radiusPill),
+                                borderSide:
+                                    const BorderSide(color: AppColors.darkBorder),
                               ),
                               enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                                borderSide: const BorderSide(color: AppColors.darkBorder),
+                                borderRadius: BorderRadius.circular(
+                                    AppSpacing.radiusPill),
+                                borderSide:
+                                    const BorderSide(color: AppColors.darkBorder),
                               ),
                               focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                                borderSide: const BorderSide(color: AppColors.accentPrimary, width: 1.0),
+                                borderRadius: BorderRadius.circular(
+                                    AppSpacing.radiusPill),
+                                borderSide: const BorderSide(
+                                    color: AppColors.accentPrimary, width: 1.2),
                               ),
                             ),
                           ),
+
+                          const SizedBox(height: 14.0),
+
+                          // Role Filter Chips (All, Created by Me, Shared with Me)
+                          _buildFilterTabs(),
                         ],
                       ),
                     ),
                   ),
 
-                  // Projects Grid/List View
+                  // Projects Content (Skeletons, Empty State, or Grid List)
                   if (state is ProjectsLoading)
-                    const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(
-                        child: CircularProgressIndicator(color: AppColors.accentPrimary),
-                      ),
-                    )
+                    _buildLoadingSkeletons()
                   else if (state is ProjectsError)
                     SliverFillRemaining(
                       hasScrollBody: false,
@@ -507,15 +869,23 @@ class _ProjectsViewState extends State<_ProjectsView> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.cloud_off_rounded, color: AppColors.error, size: 48.0),
+                              const Icon(Icons.cloud_off_rounded,
+                                  color: AppColors.error, size: 48.0),
                               const SizedBox(height: 12.0),
-                              Text(state.errorMessage, textAlign: TextAlign.center, style: AppTypography.bodyMedium),
+                              Text(state.errorMessage,
+                                  textAlign: TextAlign.center,
+                                  style: AppTypography.bodyMedium),
                               const SizedBox(height: 16.0),
                               ElevatedButton(
-                                onPressed: () => context.read<ProjectsCubit>().loadProjects(),
+                                onPressed: () =>
+                                    context.read<ProjectsCubit>().loadProjects(),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: AppColors.accentPrimary,
                                   foregroundColor: Colors.black,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                        AppSpacing.radiusPill),
+                                  ),
                                 ),
                                 child: const Text('Retry Connection'),
                               ),
@@ -525,68 +895,7 @@ class _ProjectsViewState extends State<_ProjectsView> {
                       ),
                     )
                   else if (state is ProjectsLoaded) ...[
-                    if (state.filteredProjects.isEmpty)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32.0),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 64.0,
-                                  height: 64.0,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.darkSurfaceElevated,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: AppColors.darkBorder),
-                                  ),
-                                  child: const Icon(Icons.folder_open_rounded, color: AppColors.accentPrimary, size: 30.0),
-                                ),
-                                const SizedBox(height: 16.0),
-                                Text(
-                                  state.searchQuery.isEmpty ? 'No Projects Yet' : 'No matching projects found',
-                                  style: AppTypography.titleMedium,
-                                ),
-                                const SizedBox(height: 6.0),
-                                Text(
-                                  state.searchQuery.isEmpty
-                                      ? 'Create your first project to start creating sketchboards.'
-                                      : 'Try searching with a different term.',
-                                  textAlign: TextAlign.center,
-                                  style: AppTypography.bodySmall.copyWith(color: AppColors.textTertiaryDark),
-                                ),
-                                if (state.searchQuery.isEmpty) ...[
-                                  const SizedBox(height: 20.0),
-                                  ElevatedButton(
-                                    onPressed: _showCreateProjectDialog,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.accentPrimary,
-                                      foregroundColor: Colors.black,
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppSpacing.radiusPill)),
-                                    ),
-                                    child: const Text('Create Project Now'),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 40.0),
-                        sliver: SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final project = state.filteredProjects[index];
-                              return _buildProjectCard(project);
-                            },
-                            childCount: state.filteredProjects.length,
-                          ),
-                        ),
-                      ),
+                    _buildFilteredProjectsList(state),
                   ],
                 ],
               ),
@@ -597,7 +906,317 @@ class _ProjectsViewState extends State<_ProjectsView> {
     );
   }
 
-  Widget _buildProjectCard(ProjectModel project) {
+  Widget _buildWorkspaceMetrics(List<ProjectModel> projects) {
+    final totalProjects = projects.length;
+    final totalBoards = projects.fold<int>(0, (sum, p) => sum + p.boardCount);
+    final totalMembers = projects.fold<int>(0, (sum, p) => sum + p.memberCount);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+      decoration: BoxDecoration(
+        color: AppColors.darkSurfaceCard,
+        borderRadius: BorderRadius.circular(18.0),
+        border: Border.all(color: AppColors.darkBorder, width: 0.8),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildMetricItem(
+            value: '$totalProjects',
+            label: totalProjects == 1 ? 'Project' : 'Projects',
+            color: AppColors.accentPrimary,
+            icon: Icons.folder_copy_outlined,
+          ),
+          Container(width: 1.0, height: 28.0, color: AppColors.darkBorder),
+          _buildMetricItem(
+            value: '$totalBoards',
+            label: totalBoards == 1 ? 'Whiteboard' : 'Whiteboards',
+            color: AppColors.accentCyan,
+            icon: Icons.draw_outlined,
+          ),
+          Container(width: 1.0, height: 28.0, color: AppColors.darkBorder),
+          _buildMetricItem(
+            value: '$totalMembers',
+            label: totalMembers == 1 ? 'Collaborator' : 'Collaborators',
+            color: AppColors.accentSecondary,
+            icon: Icons.people_outline,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetricItem({
+    required String value,
+    required String label,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6.0),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8.0),
+          ),
+          child: Icon(icon, size: 16.0, color: color),
+        ),
+        const SizedBox(width: 8.0),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              value,
+              style: AppTypography.titleMedium.copyWith(
+                fontWeight: FontWeight.w800,
+                fontSize: 15.0,
+                color: AppColors.textPrimaryDark,
+              ),
+            ),
+            Text(
+              label,
+              style: AppTypography.labelSmall.copyWith(
+                fontSize: 10.0,
+                color: AppColors.textTertiaryDark,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFilterTabs() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      child: Row(
+        children: [
+          _buildFilterChip('All', ProjectFilter.all),
+          const SizedBox(width: 8.0),
+          _buildFilterChip('Created by Me', ProjectFilter.owned),
+          const SizedBox(width: 8.0),
+          _buildFilterChip('Shared with Me', ProjectFilter.shared),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, ProjectFilter filter) {
+    final isSelected = _selectedFilter == filter;
+    return InkWell(
+      onTap: () {
+        setState(() => _selectedFilter = filter);
+      },
+      borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 14.0, vertical: 7.0),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.accentPrimary.withValues(alpha: 0.14)
+              : AppColors.darkSurface,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
+          border: Border.all(
+            color: isSelected
+                ? AppColors.accentPrimary
+                : AppColors.darkBorder,
+            width: 1.0,
+          ),
+        ),
+        child: Text(
+          label,
+          style: AppTypography.labelSmall.copyWith(
+            color: isSelected
+                ? AppColors.accentPrimary
+                : AppColors.textSecondaryDark,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+            fontSize: 12.0,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingSkeletons() {
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 40.0),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => Container(
+            margin: const EdgeInsets.only(bottom: 14.0),
+            height: 120.0,
+            decoration: BoxDecoration(
+              color: AppColors.darkSurfaceCard,
+              borderRadius: BorderRadius.circular(18.0),
+              border: Border.all(color: AppColors.darkBorder),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 140.0,
+                        height: 16.0,
+                        decoration: BoxDecoration(
+                          color: AppColors.darkSurfaceElevated,
+                          borderRadius: BorderRadius.circular(8.0),
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        width: 50.0,
+                        height: 18.0,
+                        decoration: BoxDecoration(
+                          color: AppColors.darkSurfaceElevated,
+                          borderRadius: BorderRadius.circular(10.0),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  Row(
+                    children: [
+                      Container(
+                        width: 80.0,
+                        height: 14.0,
+                        decoration: BoxDecoration(
+                          color: AppColors.darkSurfaceElevated,
+                          borderRadius: BorderRadius.circular(6.0),
+                        ),
+                      ),
+                      const SizedBox(width: 12.0),
+                      Container(
+                        width: 70.0,
+                        height: 14.0,
+                        decoration: BoxDecoration(
+                          color: AppColors.darkSurfaceElevated,
+                          borderRadius: BorderRadius.circular(6.0),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          childCount: 3,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilteredProjectsList(ProjectsLoaded state) {
+    var list = state.filteredProjects;
+
+    // Apply role filter
+    if (_selectedFilter == ProjectFilter.owned) {
+      list = list.where((p) => p.isOwner).toList();
+    } else if (_selectedFilter == ProjectFilter.shared) {
+      list = list.where((p) => !p.isOwner).toList();
+    }
+
+    if (list.isEmpty) {
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Glowing illustrated canvas badge
+                Container(
+                  width: 72.0,
+                  height: 72.0,
+                  decoration: BoxDecoration(
+                    color: AppColors.darkSurfaceElevated,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: AppColors.accentPrimary.withValues(alpha: 0.3),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.accentPrimary.withValues(alpha: 0.15),
+                        blurRadius: 18.0,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.draw_rounded,
+                      color: AppColors.accentPrimary, size: 34.0),
+                ),
+                const SizedBox(height: 18.0),
+                Text(
+                  state.searchQuery.isEmpty
+                      ? (_selectedFilter == ProjectFilter.shared
+                          ? 'No Shared Projects'
+                          : 'No Projects Yet')
+                      : 'No matching projects found',
+                  style: AppTypography.titleMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18.0,
+                  ),
+                ),
+                const SizedBox(height: 8.0),
+                Text(
+                  state.searchQuery.isEmpty
+                      ? (_selectedFilter == ProjectFilter.shared
+                          ? 'Projects shared with you will appear here.'
+                          : 'Create your first project to start sketching on an infinite canvas.')
+                      : 'Try searching with a different term.',
+                  textAlign: TextAlign.center,
+                  style: AppTypography.bodySmall
+                      .copyWith(color: AppColors.textTertiaryDark),
+                ),
+                if (state.searchQuery.isEmpty &&
+                    _selectedFilter != ProjectFilter.shared) ...[
+                  const SizedBox(height: 22.0),
+                  ElevatedButton.icon(
+                    onPressed: _showCreateProjectDialog,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.accentPrimary,
+                      foregroundColor: const Color(0xFF090B10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 22.0, vertical: 13.0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppSpacing.radiusPill),
+                      ),
+                    ),
+                    icon: const Icon(Icons.add_rounded, size: 18.0),
+                    label: const Text('Create Project Now',
+                        style: TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 40.0),
+      sliver: SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            final project = list[index];
+            return _buildProjectCard(project, index);
+          },
+          childCount: list.length,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProjectCard(ProjectModel project, int index) {
     Color roleColor;
     switch (project.userRole.toLowerCase()) {
       case 'owner':
@@ -607,127 +1226,253 @@ class _ProjectsViewState extends State<_ProjectsView> {
         roleColor = AppColors.accentCyan;
         break;
       default:
-        roleColor = AppColors.textTertiaryDark;
+        roleColor = AppColors.accentSecondary;
     }
+
+    // Dynamic accent color for blueprint preview line
+    final cardAccentColors = [
+      AppColors.accentPrimary,
+      AppColors.accentCyan,
+      AppColors.accentSecondary,
+      AppColors.accentPurple,
+    ];
+    final accentColor = cardAccentColors[index % cardAccentColors.length];
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14.0),
       decoration: BoxDecoration(
         color: AppColors.darkSurfaceCard,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
-        border: Border.all(color: AppColors.darkBorder, width: 0.9),
+        borderRadius: BorderRadius.circular(20.0),
+        border: Border.all(
+          color: AppColors.darkBorder,
+          width: 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 10.0,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+          borderRadius: BorderRadius.circular(20.0),
           onTap: () {
             context.push('/projects/${project.id}');
           },
-          child: Padding(
-            padding: const EdgeInsets.all(18.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Top row: Title, Role Badge, Menu
-                Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Top Blueprint Preview Line & Pattern
+              Container(
+                height: 4.0,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      accentColor,
+                      accentColor.withValues(alpha: 0.2),
+                    ],
+                  ),
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20.0),
+                    topRight: Radius.circular(20.0),
+                  ),
+                ),
+              ),
+
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18.0, 14.0, 18.0, 16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        project.name,
-                        style: AppTypography.titleMedium.copyWith(fontSize: 17.0),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8.0),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 3.5),
-                      decoration: BoxDecoration(
-                        color: roleColor.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(AppSpacing.radiusPill),
-                        border: Border.all(color: roleColor.withValues(alpha: 0.4), width: 0.8),
-                      ),
-                      child: Text(
-                        project.userRole.toUpperCase(),
-                        style: TextStyle(
-                          color: roleColor,
-                          fontSize: 10.0,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.6,
+                    // Top row: Title, Role Badge, Menu
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Project Icon Avatar
+                        Container(
+                          width: 38.0,
+                          height: 38.0,
+                          decoration: BoxDecoration(
+                            color: accentColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(12.0),
+                            border: Border.all(
+                              color: accentColor.withValues(alpha: 0.3),
+                              width: 1.0,
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.draw_outlined,
+                            size: 19.0,
+                            color: accentColor,
+                          ),
                         ),
-                      ),
-                    ),
-                    PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert_rounded, color: AppColors.textTertiaryDark, size: 20.0),
-                      color: AppColors.darkSurfaceElevated,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-                      onSelected: (val) {
-                        if (val == 'open') {
-                          context.push('/projects/${project.id}');
-                        } else if (val == 'rename') {
-                          _showRenameDialog(project);
-                        } else if (val == 'delete') {
-                          _confirmDeleteDialog(project);
-                        }
-                      },
-                      itemBuilder: (ctx) => [
-                        const PopupMenuItem(
-                          value: 'open',
-                          child: Row(
+                        const SizedBox(width: 12.0),
+
+                        // Title & Relative Time
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(Icons.open_in_new_rounded, size: 18.0, color: Colors.white70),
-                              SizedBox(width: 10.0),
-                              Text('Open Workspace', style: TextStyle(color: Colors.white)),
+                              Text(
+                                project.name,
+                                style: AppTypography.titleMedium.copyWith(
+                                  fontSize: 16.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2.0),
+                              Text(
+                                'Updated ${_formatRelativeTime(project.updatedAt ?? project.createdAt)}',
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: AppColors.textTertiaryDark,
+                                  fontSize: 11.0,
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                        if (project.canEdit)
-                          const PopupMenuItem(
-                            value: 'rename',
-                            child: Row(
-                              children: [
-                                Icon(Icons.edit_outlined, size: 18.0, color: Colors.white70),
-                                SizedBox(width: 10.0),
-                                Text('Rename', style: TextStyle(color: Colors.white)),
-                              ],
+
+                        const SizedBox(width: 8.0),
+
+                        // Role Badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8.0, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: roleColor.withValues(alpha: 0.14),
+                            borderRadius:
+                                BorderRadius.circular(AppSpacing.radiusPill),
+                            border: Border.all(
+                              color: roleColor.withValues(alpha: 0.35),
+                              width: 0.8,
                             ),
                           ),
-                        if (project.isOwner)
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(Icons.delete_outline, size: 18.0, color: AppColors.error),
-                                SizedBox(width: 10.0),
-                                Text('Delete Project', style: TextStyle(color: AppColors.error)),
-                              ],
+                          child: Text(
+                            project.userRole.toUpperCase(),
+                            style: TextStyle(
+                              color: roleColor,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.8,
                             ),
                           ),
+                        ),
+
+                        // More Actions Menu Button
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert_rounded,
+                              color: AppColors.textTertiaryDark, size: 20.0),
+                          color: AppColors.darkSurfaceElevated,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14.0)),
+                          onSelected: (val) {
+                            if (val == 'open') {
+                              context.push('/projects/${project.id}');
+                            } else if (val == 'rename') {
+                              _showRenameDialog(project);
+                            } else if (val == 'delete') {
+                              _confirmDeleteDialog(project);
+                            }
+                          },
+                          itemBuilder: (ctx) => [
+                            const PopupMenuItem(
+                              value: 'open',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.open_in_new_rounded,
+                                      size: 17.0, color: Colors.white70),
+                                  SizedBox(width: 10.0),
+                                  Text('Open Workspace',
+                                      style: TextStyle(color: Colors.white)),
+                                ],
+                              ),
+                            ),
+                            if (project.canEdit)
+                              const PopupMenuItem(
+                                value: 'rename',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.edit_outlined,
+                                        size: 17.0, color: Colors.white70),
+                                    SizedBox(width: 10.0),
+                                    Text('Rename',
+                                        style: TextStyle(color: Colors.white)),
+                                  ],
+                                ),
+                              ),
+                            if (project.isOwner)
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete_outline,
+                                        size: 17.0, color: AppColors.error),
+                                    SizedBox(width: 10.0),
+                                    Text('Delete Project',
+                                        style:
+                                            TextStyle(color: AppColors.error)),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 14.0),
+
+                    // Divider
+                    Container(
+                      height: 1.0,
+                      color: AppColors.darkBorder.withValues(alpha: 0.5),
+                    ),
+
+                    const SizedBox(height: 12.0),
+
+                    // Meta row: Boards Count, Member Count & Open Chevron
+                    Row(
+                      children: [
+                        _buildMetaChip(
+                          icon: Icons.dashboard_outlined,
+                          label:
+                              '${project.boardCount} ${project.boardCount == 1 ? 'board' : 'boards'}',
+                        ),
+                        const SizedBox(width: 14.0),
+                        _buildMetaChip(
+                          icon: Icons.people_outline,
+                          label:
+                              '${project.memberCount} ${project.memberCount == 1 ? 'member' : 'members'}',
+                        ),
+                        const Spacer(),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Open',
+                              style: AppTypography.labelSmall.copyWith(
+                                color: AppColors.accentPrimary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(width: 2.0),
+                            const Icon(
+                              Icons.arrow_forward_rounded,
+                              color: AppColors.accentPrimary,
+                              size: 14.0,
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 14.0),
-
-                // Meta row: Boards Count, Member Count
-                Row(
-                  children: [
-                    _buildMetaChip(
-                      icon: Icons.dashboard_outlined,
-                      label: '${project.boardCount} ${project.boardCount == 1 ? 'board' : 'boards'}',
-                    ),
-                    const SizedBox(width: 14.0),
-                    _buildMetaChip(
-                      icon: Icons.people_outline,
-                      label: '${project.memberCount} ${project.memberCount == 1 ? 'member' : 'members'}',
-                    ),
-                    const Spacer(),
-                    const Icon(Icons.chevron_right_rounded, color: AppColors.textTertiaryDark, size: 20.0),
-                  ],
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -738,7 +1483,7 @@ class _ProjectsViewState extends State<_ProjectsView> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 15.0, color: AppColors.textTertiaryDark),
+        Icon(icon, size: 14.5, color: AppColors.textTertiaryDark),
         const SizedBox(width: 5.0),
         Text(
           label,
@@ -751,3 +1496,4 @@ class _ProjectsViewState extends State<_ProjectsView> {
     );
   }
 }
+
