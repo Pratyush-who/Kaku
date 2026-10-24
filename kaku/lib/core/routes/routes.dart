@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/presentation/cubit/auth_state.dart';
 import '../../features/auth/presentation/pages/auth_page.dart';
 import '../../features/board/presentation/pages/board_page.dart';
+import '../../features/profile/presentation/pages/profile_page.dart';
 import '../../features/project_detail/presentation/pages/project_detail_page.dart';
 import '../../features/projects/presentation/pages/projects_page.dart';
 import '../../features/splash/presentation/pages/splash_page.dart';
@@ -16,6 +17,7 @@ abstract final class AppRoutes {
   static const String projects = '/projects';
   static const String projectDetail = '/projects/:id';
   static const String board = '/boards/:id';
+  static const String profile = '/profile';
 }
 
 final GoRouter appRouter = GoRouter(
@@ -96,6 +98,17 @@ final GoRouter appRouter = GoRouter(
         return CustomTransitionPage<void>(
           key: ValueKey('board-$boardId'),
           child: BoardPage(boardId: boardId),
+          transitionsBuilder: _fadeSlideTransition,
+        );
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.profile,
+      name: 'profile',
+      pageBuilder: (BuildContext context, GoRouterState state) {
+        return const CustomTransitionPage<void>(
+          key: ValueKey('profile'),
+          child: ProfilePage(),
           transitionsBuilder: _fadeSlideTransition,
         );
       },

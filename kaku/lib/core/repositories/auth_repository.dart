@@ -71,10 +71,19 @@ class AuthRepository {
     throw ApiException('Failed to retrieve user profile');
   }
 
-  Future<UserModel> updateProfile({String? name, String? displayName}) async {
+  Future<UserModel> updateProfile({
+    String? name,
+    String? displayName,
+    String? avatarUrl,
+    String? bio,
+    Map<String, dynamic>? preferences,
+  }) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name.trim();
     if (displayName != null) body['displayName'] = displayName.trim();
+    if (avatarUrl != null) body['avatarUrl'] = avatarUrl.trim();
+    if (bio != null) body['bio'] = bio.trim();
+    if (preferences != null) body['preferences'] = preferences;
 
     final response = await _api.patch('/api/v1/me', body: body);
     if (response is Map<String, dynamic>) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/common/widgets/user_avatar.dart';
 import '../../../../core/models/board_model.dart';
 import '../../../../core/models/invitation_model.dart';
 import '../../../../core/models/member_model.dart';
@@ -665,12 +666,10 @@ class _ProjectDetailViewState extends State<_ProjectDetailView>
         border: Border.all(color: AppColors.darkBorder),
       ),
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: AppColors.darkSurfaceElevated,
-          child: Text(
-            (member.user?.displayName.isNotEmpty == true ? member.user!.displayName[0] : 'U').toUpperCase(),
-            style: const TextStyle(color: AppColors.accentPrimary, fontWeight: FontWeight.bold),
-          ),
+        leading: UserAvatar(
+          user: member.user,
+          radius: 19.0,
+          borderColor: member.isOwner ? AppColors.accentPrimary : AppColors.darkBorder,
         ),
         title: Text(member.user?.displayName ?? member.user?.name ?? 'Member', style: AppTypography.bodyMedium),
         subtitle: Text(member.user?.email ?? '', style: AppTypography.bodySmall.copyWith(color: AppColors.textTertiaryDark)),

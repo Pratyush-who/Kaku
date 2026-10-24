@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/common/widgets/app_brand_logo.dart';
+import '../../../../core/common/widgets/user_avatar.dart';
 import '../../../../core/models/project_model.dart';
 import '../../../../core/models/user_model.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/repositories/auth_repository.dart';
+import '../../../../core/routes/routes.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -648,46 +650,104 @@ class _ProjectsViewState extends State<_ProjectsView> {
                           ),
                           const SizedBox(width: 10.0),
 
-                          // User Profile Avatar
-                          InkWell(
-                            onTap: () {
-                              ProfileSettingsModal.show(
-                                context,
-                                currentUser: _currentUser,
-                                onProfileUpdated: () {
+                          // User Profile Avatar with Command Menu
+                          PopupMenuButton<String>(
+                            tooltip: 'Profile & Settings',
+                            offset: const Offset(0, 44),
+                            color: AppColors.darkSurfaceCard,
+                            elevation: 8,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16.0),
+                              side: const BorderSide(
+                                color: AppColors.darkBorderHighlight,
+                                width: 1.0,
+                              ),
+                            ),
+                            onSelected: (value) async {
+                              if (value == 'profile') {
+                                await context.push(AppRoutes.profile);
+                                if (mounted) {
                                   _loadUser();
                                   _checkServer();
-                                },
-                              );
+                                }
+                              } else if (value == 'settings') {
+                                ProfileSettingsModal.show(
+                                  context,
+                                  currentUser: _currentUser,
+                                  onProfileUpdated: () {
+                                    _loadUser();
+                                    _checkServer();
+                                  },
+                                );
+                              } else if (value == 'logout') {
+                                final router = GoRouter.of(context);
+                                await _authRepo.logout();
+                                router.go(AppRoutes.auth);
+                              }
                             },
-                            borderRadius: BorderRadius.circular(20.0),
-                            child: Container(
-                              width: 36.0,
-                              height: 36.0,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: AppColors.primaryGradient,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.accentPrimary
-                                        .withValues(alpha: 0.25),
-                                    blurRadius: 8.0,
-                                  ),
-                                ],
-                              ),
-                              child: Center(
-                                child: Text(
-                                  (_currentUser?.displayName.isNotEmpty == true
-                                          ? _currentUser!.displayName[0]
-                                          : 'K')
-                                      .toUpperCase(),
-                                  style: const TextStyle(
-                                    color: Color(0xFF090B10),
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 14.5,
-                                  ),
+                            itemBuilder: (ctx) => [
+                              PopupMenuItem(
+                                enabled: false,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _currentUser?.displayName.isNotEmpty == true
+                                          ? _currentUser!.displayName
+                                          : 'Creator Workspace',
+                                      style: AppTypography.titleSmall.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    Text(
+                                      _currentUser?.email ?? '',
+                                      style: AppTypography.bodySmall.copyWith(
+                                        color: AppColors.textTertiaryDark,
+                                        fontSize: 11.0,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6.0),
+                                    const Divider(color: AppColors.darkBorder, height: 1.0),
+                                  ],
                                 ),
                               ),
+                              const PopupMenuItem(
+                                value: 'profile',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.person_outline, size: 18.0, color: AppColors.accentPrimary),
+                                    SizedBox(width: 10.0),
+                                    Text('Profile Dashboard', style: TextStyle(fontSize: 13.0, color: Colors.white)),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'settings',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.tune_outlined, size: 18.0, color: AppColors.accentCyan),
+                                    SizedBox(width: 10.0),
+                                    Text('Quick Settings', style: TextStyle(fontSize: 13.0, color: Colors.white)),
+                                  ],
+                                ),
+                              ),
+                              const PopupMenuItem(
+                                value: 'logout',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.logout_rounded, size: 18.0, color: AppColors.error),
+                                    SizedBox(width: 10.0),
+                                    Text('Sign Out', style: TextStyle(fontSize: 13.0, color: AppColors.error)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            child: UserAvatar(
+                              user: _currentUser,
+                              radius: 18.0,
+                              showOnline: true,
+                              isOnline: _serverHealthy,
                             ),
                           ),
                         ],

@@ -193,10 +193,14 @@ class ApiClient {
     }
   }
 
-  Future<dynamic> delete(String path) async {
+  Future<dynamic> delete(String path, {dynamic body}) async {
     try {
       final uri = _buildUri(path);
-      final response = await http.delete(uri, headers: _buildHeaders());
+      final response = await http.delete(
+        uri,
+        headers: _buildHeaders(),
+        body: body != null ? jsonEncode(body) : null,
+      );
       return _handleResponse(response);
     } on SocketException {
       throw ApiException(
@@ -205,6 +209,40 @@ class ApiClient {
     } catch (e) {
       if (e is ApiException) rethrow;
       throw ApiException('Network error: $e');
+    }
+  }
+
+  Future<dynamic> uploadMultipart(
+    String path, {
+    required List<int> bytes,
+    required String filename,
+    String fieldName = 'avatar',
+  }) async {
+    try {
+      final uri = _buildUri(path);
+      final request = http.MultipartRequest('POST', uri);
+      if (_token != null && _token!.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $_token';
+      }
+      request.headers['Accept'] = 'application/json';
+
+      final multipartFile = http.MultipartFile.fromBytes(
+        fieldName,
+        bytes,
+        filename: filename,
+      );
+      request.files.add(multipartFile);
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      return _handleResponse(response);
+    } on SocketException {
+      throw ApiException(
+        'Cannot connect to backend at $_baseUrl. Ensure backend server is running.',
+      );
+    } catch (e) {
+      if (e is ApiException) rethrow;
+      throw ApiException('Network error during upload: $e');
     }
   }
 
