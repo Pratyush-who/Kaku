@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	_ "github.com/lib/pq"
 
 	"github.com/Pratyush-who/Kaku/backend/internal/auth"
+	"github.com/Pratyush-who/Kaku/backend/internal/collab"
 	"github.com/Pratyush-who/Kaku/backend/internal/config"
 	"github.com/Pratyush-who/Kaku/backend/internal/handlers"
 	"github.com/Pratyush-who/Kaku/backend/internal/httputil"
@@ -25,7 +27,6 @@ import (
 func main() {
 	cfg := config.Load()
 
-	// Connect to PostgreSQL
 	db, err := sql.Open("postgres", cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Failed to open database connection: %v", err)
@@ -36,13 +37,11 @@ func main() {
 	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(5 * time.Minute)
 
-	// Quick ping check
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	if err := db.PingContext(ctx); err != nil {
 		log.Printf("Warning: Database ping failed (will retry on requests): %v", err)
 	} else {
 		log.Printf("Connected to PostgreSQL successfully")
-		// Automatically ensure database schema is applied
 		if err := autoMigrate(db); err != nil {
 			log.Printf("Warning: Database schema auto-migration check: %v", err)
 		} else {
@@ -59,7 +58,8 @@ func main() {
 	authHandler := handlers.NewAuthHandler(repo, tokenService, cfg.BcryptCost)
 	profileHandler := handlers.NewProfileHandler(repo, tokenService, cfg.BcryptCost, "./uploads")
 	projectHandler := handlers.NewProjectHandler(repo)
-	boardHandler := handlers.NewBoardHandler(repo)
+	collabHub := collab.NewHub(repo, tokenService)
+	boardHandler := handlers.NewBoardHandler(repo, collabHub, cfg.BcryptCost)
 	invitationHandler := handlers.NewInvitationHandler(repo)
 
 	// Router setup
@@ -73,31 +73,34 @@ func main() {
 		})
 	})
 
-	// Public Auth Endpoints
 	mux.HandleFunc("/api/v1/auth/register", authHandler.Register)
 	mux.HandleFunc("/api/v1/auth/login", authHandler.Login)
 
-	// Static file serving for uploads (avatars, attachments)
 	mux.Handle("/uploads/", http.StripPrefix("/uploads/", http.FileServer(http.Dir("./uploads"))))
 
-	// Protected Endpoints (Wrapped with AuthMiddleware)
 	authMW := middleware.AuthMiddleware(tokenService)
 
-	// User Profile Endpoints (supports both /api/v1/me and /api/v1/profile)
 	mux.Handle("/api/v1/me", authMW(http.HandlerFunc(profileHandler.HandleMe)))
 	mux.Handle("/api/v1/me/", authMW(http.HandlerFunc(profileHandler.HandleMeSubpaths)))
 	mux.Handle("/api/v1/profile", authMW(http.HandlerFunc(profileHandler.HandleMe)))
 	mux.Handle("/api/v1/profile/", authMW(http.HandlerFunc(profileHandler.HandleMeSubpaths)))
 
-	// /api/v1/projects and /api/v1/projects/
 	mux.Handle("/api/v1/projects", authMW(http.HandlerFunc(projectHandler.HandleProjects)))
 	mux.Handle("/api/v1/projects/", authMW(http.HandlerFunc(projectHandler.HandleProjectByID)))
 
-	// /api/v1/boards and /api/v1/boards/
-	mux.Handle("/api/v1/boards", authMW(http.HandlerFunc(boardHandler.HandleBoardByID)))
-	mux.Handle("/api/v1/boards/", authMW(http.HandlerFunc(boardHandler.HandleBoardByID)))
+	boardMuxFunc := func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/ws") {
+			collabHub.ServeWS(w, r)
+			return
+		}
+		authMW(http.HandlerFunc(boardHandler.HandleBoardByID)).ServeHTTP(w, r)
+	}
 
-	// Invitations (inspection is public, accepting requires auth)
+	mux.HandleFunc("/api/v1/boards", boardMuxFunc)
+	mux.HandleFunc("/api/v1/boards/", boardMuxFunc)
+
+	mux.HandleFunc("/api/v1/shared/boards/", boardHandler.HandleSharedBoard)
+
 	invitationMuxFunc := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			// Accepting requires auth
@@ -150,6 +153,9 @@ var schemaSQL string
 //go:embed migrations/000002_add_profile_fields.up.sql
 var profileFieldsSQL string
 
+//go:embed migrations/000003_board_management_and_collaboration.up.sql
+var boardCollabSQL string
+
 func autoMigrate(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -158,6 +164,9 @@ func autoMigrate(db *sql.DB) error {
 		return err
 	}
 	if _, err := db.ExecContext(ctx, profileFieldsSQL); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, boardCollabSQL); err != nil {
 		return err
 	}
 	return nil

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"github.com/Pratyush-who/Kaku/backend/internal/models"
 )
@@ -393,7 +393,7 @@ func (r *PostgresRepository) ListUserRecentBoards(ctx context.Context, userID uu
 		FROM boards b
 		INNER JOIN projects p ON b.project_id = p.id
 		INNER JOIN project_members pm ON p.id = pm.project_id
-		WHERE pm.user_id = $1
+		WHERE pm.user_id = $1 AND b.is_trashed = false
 	`
 	var total int
 	if err := r.db.QueryRowContext(ctx, countQuery, userID).Scan(&total); err != nil {
@@ -405,7 +405,7 @@ func (r *PostgresRepository) ListUserRecentBoards(ctx context.Context, userID uu
 		FROM boards b
 		INNER JOIN projects p ON b.project_id = p.id
 		INNER JOIN project_members pm ON p.id = pm.project_id
-		WHERE pm.user_id = $1
+		WHERE pm.user_id = $1 AND b.is_trashed = false
 		ORDER BY b.updated_at DESC
 		LIMIT $2 OFFSET $3
 	`
@@ -698,8 +698,12 @@ func (r *PostgresRepository) RemoveProjectMember(ctx context.Context, projectID,
 
 func (r *PostgresRepository) CreateBoard(ctx context.Context, board *models.Board) error {
 	query := `
-		INSERT INTO boards (id, project_id, name, content, viewport, revision, created_by, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO boards (
+			id, project_id, name, description, thumbnail, content, viewport,
+			revision, is_public, public_role, share_token, password_hash,
+			is_trashed, created_by, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 	`
 	if board.ID == uuid.Nil {
 		board.ID = uuid.New()
@@ -714,26 +718,52 @@ func (r *PostgresRepository) CreateBoard(ctx context.Context, board *models.Boar
 	if len(board.Viewport) == 0 {
 		board.Viewport = []byte(`{"zoom":1.0,"panX":0.0,"panY":0.0}`)
 	}
+	if board.PublicRole == "" {
+		board.PublicRole = models.RoleViewer
+	}
+	if board.ShareToken == "" {
+		board.ShareToken = uuid.New().String()
+	}
 
 	_, err := r.db.ExecContext(ctx, query,
 		board.ID,
 		board.ProjectID,
 		board.Name,
+		board.Description,
+		board.Thumbnail,
 		board.Content,
 		board.Viewport,
 		board.Revision,
+		board.IsPublic,
+		board.PublicRole,
+		board.ShareToken,
+		board.PasswordHash,
+		board.IsTrashed,
 		board.CreatedBy,
 		board.CreatedAt,
 		board.UpdatedAt,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Create initial Version 1 snapshot
+	initVersion := `
+		INSERT INTO board_versions (board_id, version_number, title, description, content, viewport, created_by, created_at)
+		VALUES ($1, 1, 'Board Created', 'Initial board canvas', $2, $3, $4, $5)
+		ON CONFLICT (board_id, version_number) DO NOTHING
+	`
+	_, _ = r.db.ExecContext(ctx, initVersion, board.ID, board.Content, board.Viewport, board.CreatedBy, now)
+	return nil
 }
 
 func (r *PostgresRepository) ListProjectBoardsSummary(ctx context.Context, projectID uuid.UUID) ([]models.BoardSummary, error) {
 	query := `
-		SELECT id, project_id, name, revision, created_by, created_at, updated_at
+		SELECT id, project_id, name, description, thumbnail, revision,
+		       is_public, public_role, share_token, (password_hash != '') AS has_password,
+		       is_trashed, trashed_at, created_by, created_at, updated_at
 		FROM boards
-		WHERE project_id = $1
+		WHERE project_id = $1 AND is_trashed = false
 		ORDER BY updated_at DESC
 	`
 	rows, err := r.db.QueryContext(ctx, query, projectID)
@@ -749,7 +779,15 @@ func (r *PostgresRepository) ListProjectBoardsSummary(ctx context.Context, proje
 			&b.ID,
 			&b.ProjectID,
 			&b.Name,
+			&b.Description,
+			&b.Thumbnail,
 			&b.Revision,
+			&b.IsPublic,
+			&b.PublicRole,
+			&b.ShareToken,
+			&b.HasPassword,
+			&b.IsTrashed,
+			&b.TrashedAt,
 			&b.CreatedBy,
 			&b.CreatedAt,
 			&b.UpdatedAt,
@@ -758,6 +796,55 @@ func (r *PostgresRepository) ListProjectBoardsSummary(ctx context.Context, proje
 			return nil, err
 		}
 		boards = append(boards, b)
+	}
+	if boards == nil {
+		boards = []models.BoardSummary{}
+	}
+	return boards, nil
+}
+
+func (r *PostgresRepository) ListProjectTrashedBoards(ctx context.Context, projectID uuid.UUID) ([]models.BoardSummary, error) {
+	query := `
+		SELECT id, project_id, name, description, thumbnail, revision,
+		       is_public, public_role, share_token, (password_hash != '') AS has_password,
+		       is_trashed, trashed_at, created_by, created_at, updated_at
+		FROM boards
+		WHERE project_id = $1 AND is_trashed = true
+		ORDER BY trashed_at DESC
+	`
+	rows, err := r.db.QueryContext(ctx, query, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var boards []models.BoardSummary
+	for rows.Next() {
+		var b models.BoardSummary
+		err := rows.Scan(
+			&b.ID,
+			&b.ProjectID,
+			&b.Name,
+			&b.Description,
+			&b.Thumbnail,
+			&b.Revision,
+			&b.IsPublic,
+			&b.PublicRole,
+			&b.ShareToken,
+			&b.HasPassword,
+			&b.IsTrashed,
+			&b.TrashedAt,
+			&b.CreatedBy,
+			&b.CreatedAt,
+			&b.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		boards = append(boards, b)
+	}
+	if boards == nil {
+		boards = []models.BoardSummary{}
 	}
 	return boards, nil
 }
@@ -773,26 +860,51 @@ func (r *PostgresRepository) DuplicateBoard(ctx context.Context, boardID, userID
 	}
 
 	clone := &models.Board{
-		ID:        uuid.New(),
-		ProjectID: orig.ProjectID,
-		Name:      newName,
-		Content:   orig.Content,
-		Viewport:  orig.Viewport,
-		Revision:  0,
-		CreatedBy: &userID,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:          uuid.New(),
+		ProjectID:   orig.ProjectID,
+		Name:        newName,
+		Description: orig.Description,
+		Thumbnail:   orig.Thumbnail,
+		Content:     orig.Content,
+		Viewport:    orig.Viewport,
+		Revision:    0,
+		IsPublic:    false,
+		PublicRole:  models.RoleViewer,
+		ShareToken:  uuid.New().String(),
+		CreatedBy:   &userID,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 
 	if err := r.CreateBoard(ctx, clone); err != nil {
 		return nil, err
 	}
+
+	// Also clone all existing active board elements
+	cloneElementsQuery := `
+		INSERT INTO board_elements (
+			id, board_id, type, x, y, width, height, angle, stroke_color,
+			background_color, fill_style, stroke_width, stroke_style, roughness,
+			opacity, text, font_size, font_family, text_align, points, properties,
+			z_index, version, is_deleted, created_by, last_modified_by, created_at, updated_at
+		)
+		SELECT id, $1, type, x, y, width, height, angle, stroke_color,
+		       background_color, fill_style, stroke_width, stroke_style, roughness,
+		       opacity, text, font_size, font_family, text_align, points, properties,
+		       z_index, 1, false, $2, $2, now(), now()
+		FROM board_elements
+		WHERE board_id = $3 AND is_deleted = false
+	`
+	_, _ = r.db.ExecContext(ctx, cloneElementsQuery, clone.ID, userID, boardID)
+
 	return clone, nil
 }
 
 func (r *PostgresRepository) GetBoardByID(ctx context.Context, boardID uuid.UUID) (*models.Board, error) {
 	query := `
-		SELECT id, project_id, name, content, viewport, revision, created_by, created_at, updated_at
+		SELECT id, project_id, name, description, thumbnail, content, viewport, revision,
+		       is_public, public_role, share_token, (password_hash != '') AS has_password,
+		       password_hash, is_trashed, trashed_at, created_by, created_at, updated_at
 		FROM boards
 		WHERE id = $1
 	`
@@ -801,9 +913,18 @@ func (r *PostgresRepository) GetBoardByID(ctx context.Context, boardID uuid.UUID
 		&b.ID,
 		&b.ProjectID,
 		&b.Name,
+		&b.Description,
+		&b.Thumbnail,
 		&b.Content,
 		&b.Viewport,
 		&b.Revision,
+		&b.IsPublic,
+		&b.PublicRole,
+		&b.ShareToken,
+		&b.HasPassword,
+		&b.PasswordHash,
+		&b.IsTrashed,
+		&b.TrashedAt,
 		&b.CreatedBy,
 		&b.CreatedAt,
 		&b.UpdatedAt,
@@ -817,13 +938,109 @@ func (r *PostgresRepository) GetBoardByID(ctx context.Context, boardID uuid.UUID
 	return b, nil
 }
 
-func (r *PostgresRepository) UpdateBoardMetadata(ctx context.Context, boardID uuid.UUID, name string) error {
+func (r *PostgresRepository) GetBoardByShareToken(ctx context.Context, shareToken string) (*models.Board, error) {
+	query := `
+		SELECT id, project_id, name, description, thumbnail, content, viewport, revision,
+		       is_public, public_role, share_token, (password_hash != '') AS has_password,
+		       password_hash, is_trashed, trashed_at, created_by, created_at, updated_at
+		FROM boards
+		WHERE share_token = $1 AND is_trashed = false
+	`
+	b := &models.Board{}
+	err := r.db.QueryRowContext(ctx, query, shareToken).Scan(
+		&b.ID,
+		&b.ProjectID,
+		&b.Name,
+		&b.Description,
+		&b.Thumbnail,
+		&b.Content,
+		&b.Viewport,
+		&b.Revision,
+		&b.IsPublic,
+		&b.PublicRole,
+		&b.ShareToken,
+		&b.HasPassword,
+		&b.PasswordHash,
+		&b.IsTrashed,
+		&b.TrashedAt,
+		&b.CreatedBy,
+		&b.CreatedAt,
+		&b.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func (r *PostgresRepository) UpdateBoardMetadata(ctx context.Context, boardID uuid.UUID, name, description, thumbnail string) error {
 	query := `
 		UPDATE boards
-		SET name = $1, updated_at = now()
-		WHERE id = $2
+		SET name = COALESCE(NULLIF($1, ''), name),
+		    description = CASE WHEN $2 != '__KEEP__' THEN $2 ELSE description END,
+		    thumbnail = CASE WHEN $3 != '__KEEP__' THEN $3 ELSE thumbnail END,
+		    updated_at = now()
+		WHERE id = $4
 	`
-	res, err := r.db.ExecContext(ctx, query, name, boardID)
+	res, err := r.db.ExecContext(ctx, query, name, description, thumbnail, boardID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresRepository) UpdateBoardShareSettings(ctx context.Context, boardID uuid.UUID, isPublic bool, publicRole models.ProjectRole, shareToken, passwordHash string) error {
+	query := `
+		UPDATE boards
+		SET is_public = $1,
+		    public_role = $2,
+		    share_token = CASE WHEN $3 != '' THEN $3 ELSE share_token END,
+		    password_hash = CASE WHEN $4 != '__KEEP__' THEN $4 ELSE password_hash END,
+		    updated_at = now()
+		WHERE id = $5
+	`
+	res, err := r.db.ExecContext(ctx, query, isPublic, publicRole, shareToken, passwordHash, boardID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresRepository) TrashBoard(ctx context.Context, boardID uuid.UUID) error {
+	query := `
+		UPDATE boards
+		SET is_trashed = true, trashed_at = now(), updated_at = now()
+		WHERE id = $1 AND is_trashed = false
+	`
+	res, err := r.db.ExecContext(ctx, query, boardID)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresRepository) RestoreBoard(ctx context.Context, boardID uuid.UUID) error {
+	query := `
+		UPDATE boards
+		SET is_trashed = false, trashed_at = NULL, updated_at = now()
+		WHERE id = $1 AND is_trashed = true
+	`
+	res, err := r.db.ExecContext(ctx, query, boardID)
 	if err != nil {
 		return err
 	}
@@ -836,6 +1053,11 @@ func (r *PostgresRepository) UpdateBoardMetadata(ctx context.Context, boardID uu
 
 // UpdateBoardContent updates content and viewport with optimistic concurrency check on expectedRevision
 func (r *PostgresRepository) UpdateBoardContent(ctx context.Context, boardID uuid.UUID, content, viewport []byte, expectedRevision int64) (int64, error) {
+	return r.UpdateBoardContentWithSnapshot(ctx, boardID, content, viewport, expectedRevision, false, "", nil)
+}
+
+// UpdateBoardContentWithSnapshot updates board content and optionally creates a snapshot version
+func (r *PostgresRepository) UpdateBoardContentWithSnapshot(ctx context.Context, boardID uuid.UUID, content, viewport []byte, expectedRevision int64, autoSnapshot bool, snapshotTitle string, userID *uuid.UUID) (int64, error) {
 	query := `
 		UPDATE boards
 		SET content = $1, viewport = COALESCE($2, viewport), revision = revision + 1, updated_at = now()
@@ -847,7 +1069,29 @@ func (r *PostgresRepository) UpdateBoardContent(ctx context.Context, boardID uui
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, ErrConflict
 	}
-	return newRev, err
+	if err != nil {
+		return 0, err
+	}
+
+	if autoSnapshot {
+		if snapshotTitle == "" {
+			snapshotTitle = fmt.Sprintf("Revision %d Snapshot", newRev)
+		}
+		vp := viewport
+		if len(vp) == 0 {
+			vp = []byte(`{"zoom":1.0,"panX":0.0,"panY":0.0}`)
+		}
+		_ = r.CreateBoardVersion(ctx, &models.BoardVersion{
+			BoardID:     boardID,
+			Title:       snapshotTitle,
+			Description: "Auto-saved snapshot",
+			Content:     content,
+			Viewport:    vp,
+			CreatedBy:   userID,
+		})
+	}
+
+	return newRev, nil
 }
 
 func (r *PostgresRepository) DeleteBoard(ctx context.Context, boardID uuid.UUID) error {
@@ -861,6 +1105,348 @@ func (r *PostgresRepository) DeleteBoard(ctx context.Context, boardID uuid.UUID)
 		return ErrNotFound
 	}
 	return nil
+}
+
+// Element Management Methods
+
+func (r *PostgresRepository) UpsertBoardElements(ctx context.Context, boardID uuid.UUID, elements []models.BoardElement) error {
+	if len(elements) == 0 {
+		return nil
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	query := `
+		INSERT INTO board_elements (
+			id, board_id, type, x, y, width, height, angle,
+			stroke_color, background_color, fill_style, stroke_width, stroke_style,
+			roughness, opacity, text, font_size, font_family, text_align,
+			points, properties, z_index, version, is_deleted,
+			created_by, last_modified_by, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, now(), now())
+		ON CONFLICT (board_id, id) DO UPDATE SET
+			type = EXCLUDED.type,
+			x = EXCLUDED.x,
+			y = EXCLUDED.y,
+			width = EXCLUDED.width,
+			height = EXCLUDED.height,
+			angle = EXCLUDED.angle,
+			stroke_color = EXCLUDED.stroke_color,
+			background_color = EXCLUDED.background_color,
+			fill_style = EXCLUDED.fill_style,
+			stroke_width = EXCLUDED.stroke_width,
+			stroke_style = EXCLUDED.stroke_style,
+			roughness = EXCLUDED.roughness,
+			opacity = EXCLUDED.opacity,
+			text = EXCLUDED.text,
+			font_size = EXCLUDED.font_size,
+			font_family = EXCLUDED.font_family,
+			text_align = EXCLUDED.text_align,
+			points = EXCLUDED.points,
+			properties = EXCLUDED.properties,
+			z_index = EXCLUDED.z_index,
+			version = board_elements.version + 1,
+			is_deleted = EXCLUDED.is_deleted,
+			last_modified_by = COALESCE(EXCLUDED.last_modified_by, board_elements.last_modified_by),
+			updated_at = now()
+	`
+	stmt, err := tx.PrepareContext(ctx, query)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, el := range elements {
+		points := el.Points
+		if len(points) == 0 {
+			points = []byte("[]")
+		}
+		props := el.Properties
+		if len(props) == 0 {
+			props = []byte("{}")
+		}
+		if el.StrokeColor == "" {
+			el.StrokeColor = "#000000"
+		}
+		if el.BackgroundColor == "" {
+			el.BackgroundColor = "transparent"
+		}
+		if el.StrokeWidth <= 0 {
+			el.StrokeWidth = 1
+		}
+		if el.Version <= 0 {
+			el.Version = 1
+		}
+		_, err := stmt.ExecContext(ctx,
+			el.ID, boardID, el.Type, el.X, el.Y, el.Width, el.Height, el.Angle,
+			el.StrokeColor, el.BackgroundColor, el.FillStyle, el.StrokeWidth, el.StrokeStyle,
+			el.Roughness, el.Opacity, el.Text, el.FontSize, el.FontFamily, el.TextAlign,
+			points, props, el.ZIndex, el.Version, el.IsDeleted,
+			el.CreatedBy, el.LastModifiedBy,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (r *PostgresRepository) GetBoardElements(ctx context.Context, boardID uuid.UUID) ([]models.BoardElement, error) {
+	query := `
+		SELECT be.id, be.board_id, be.type, be.x, be.y, be.width, be.height, be.angle,
+		       be.stroke_color, be.background_color, be.fill_style, be.stroke_width, be.stroke_style,
+		       be.roughness, be.opacity, be.text, be.font_size, be.font_family, be.text_align,
+		       be.points, be.properties, be.z_index, be.version, be.is_deleted,
+		       be.created_by, COALESCE(u1.display_name, ''),
+		       be.last_modified_by, COALESCE(u2.display_name, ''),
+		       be.created_at, be.updated_at
+		FROM board_elements be
+		LEFT JOIN users u1 ON be.created_by = u1.id
+		LEFT JOIN users u2 ON be.last_modified_by = u2.id
+		WHERE be.board_id = $1 AND be.is_deleted = false
+		ORDER BY be.z_index ASC, be.created_at ASC
+	`
+	rows, err := r.db.QueryContext(ctx, query, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var elements []models.BoardElement
+	for rows.Next() {
+		var el models.BoardElement
+		if err := rows.Scan(
+			&el.ID, &el.BoardID, &el.Type, &el.X, &el.Y, &el.Width, &el.Height, &el.Angle,
+			&el.StrokeColor, &el.BackgroundColor, &el.FillStyle, &el.StrokeWidth, &el.StrokeStyle,
+			&el.Roughness, &el.Opacity, &el.Text, &el.FontSize, &el.FontFamily, &el.TextAlign,
+			&el.Points, &el.Properties, &el.ZIndex, &el.Version, &el.IsDeleted,
+			&el.CreatedBy, &el.CreatedByName,
+			&el.LastModifiedBy, &el.LastModifiedByName,
+			&el.CreatedAt, &el.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		elements = append(elements, el)
+	}
+	if elements == nil {
+		elements = []models.BoardElement{}
+	}
+	return elements, nil
+}
+
+func (r *PostgresRepository) SoftDeleteBoardElements(ctx context.Context, boardID uuid.UUID, elementIDs []string, modifierID *uuid.UUID) error {
+	if len(elementIDs) == 0 {
+		return nil
+	}
+	query := `
+		UPDATE board_elements
+		SET is_deleted = true, last_modified_by = $1, updated_at = now()
+		WHERE board_id = $2 AND id = ANY($3)
+	`
+	_, err := r.db.ExecContext(ctx, query, modifierID, boardID, pq.Array(elementIDs))
+	return err
+}
+
+// Version Control / Snapshots
+
+func (r *PostgresRepository) CreateBoardVersion(ctx context.Context, version *models.BoardVersion) error {
+	query := `
+		INSERT INTO board_versions (id, board_id, version_number, title, description, content, viewport, created_by, created_at)
+		VALUES ($1, $2, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM board_versions WHERE board_id = $2), $3, $4, $5, $6, $7, now())
+		RETURNING version_number, created_at
+	`
+	if version.ID == uuid.Nil {
+		version.ID = uuid.New()
+	}
+	if len(version.Viewport) == 0 {
+		version.Viewport = []byte(`{"zoom":1.0,"panX":0.0,"panY":0.0}`)
+	}
+	return r.db.QueryRowContext(ctx, query,
+		version.ID, version.BoardID, version.Title, version.Description,
+		version.Content, version.Viewport, version.CreatedBy,
+	).Scan(&version.VersionNumber, &version.CreatedAt)
+}
+
+func (r *PostgresRepository) ListBoardVersions(ctx context.Context, boardID uuid.UUID) ([]models.BoardVersion, error) {
+	query := `
+		SELECT bv.id, bv.board_id, bv.version_number, bv.title, bv.description, bv.viewport,
+		       bv.created_by, COALESCE(u.display_name, ''), bv.created_at
+		FROM board_versions bv
+		LEFT JOIN users u ON bv.created_by = u.id
+		WHERE bv.board_id = $1
+		ORDER BY bv.version_number DESC
+	`
+	rows, err := r.db.QueryContext(ctx, query, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var versions []models.BoardVersion
+	for rows.Next() {
+		var v models.BoardVersion
+		if err := rows.Scan(
+			&v.ID, &v.BoardID, &v.VersionNumber, &v.Title, &v.Description, &v.Viewport,
+			&v.CreatedBy, &v.CreatedByName, &v.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	if versions == nil {
+		versions = []models.BoardVersion{}
+	}
+	return versions, nil
+}
+
+func (r *PostgresRepository) GetBoardVersionByNumber(ctx context.Context, boardID uuid.UUID, versionNumber int) (*models.BoardVersion, error) {
+	query := `
+		SELECT bv.id, bv.board_id, bv.version_number, bv.title, bv.description, bv.content, bv.viewport,
+		       bv.created_by, COALESCE(u.display_name, ''), bv.created_at
+		FROM board_versions bv
+		LEFT JOIN users u ON bv.created_by = u.id
+		WHERE bv.board_id = $1 AND bv.version_number = $2
+	`
+	v := &models.BoardVersion{}
+	err := r.db.QueryRowContext(ctx, query, boardID, versionNumber).Scan(
+		&v.ID, &v.BoardID, &v.VersionNumber, &v.Title, &v.Description, &v.Content, &v.Viewport,
+		&v.CreatedBy, &v.CreatedByName, &v.CreatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return v, err
+}
+
+func (r *PostgresRepository) RestoreBoardVersion(ctx context.Context, boardID uuid.UUID, versionNumber int, restoredBy *uuid.UUID) (*models.Board, error) {
+	ver, err := r.GetBoardVersionByNumber(ctx, boardID, versionNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	// Update board content
+	updateQuery := `
+		UPDATE boards
+		SET content = $1, viewport = $2, revision = revision + 1, updated_at = now()
+		WHERE id = $3
+		RETURNING revision
+	`
+	var newRev int64
+	if err := tx.QueryRowContext(ctx, updateQuery, ver.Content, ver.Viewport, boardID).Scan(&newRev); err != nil {
+		return nil, err
+	}
+
+	// Create new version entry for restoration
+	restoreVerQuery := `
+		INSERT INTO board_versions (board_id, version_number, title, description, content, viewport, created_by, created_at)
+		VALUES ($1, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM board_versions WHERE board_id = $1), $2, $3, $4, $5, $6, now())
+	`
+	title := fmt.Sprintf("Restored from Version %d", versionNumber)
+	desc := fmt.Sprintf("Restoration to version: %s", ver.Title)
+	if _, err := tx.ExecContext(ctx, restoreVerQuery, boardID, title, desc, ver.Content, ver.Viewport, restoredBy); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return r.GetBoardByID(ctx, boardID)
+}
+
+// Collaborator & Activity methods
+
+func (r *PostgresRepository) GetBoardContributors(ctx context.Context, boardID uuid.UUID) ([]models.CollaboratorSummary, error) {
+	query := `
+		SELECT COALESCE(be.last_modified_by, be.created_by) AS user_id,
+		       COALESCE(u.name, 'Unknown'),
+		       COALESCE(u.display_name, 'Unknown'),
+		       COALESCE(u.avatar_url, ''),
+		       COUNT(DISTINCT be.id) AS elements_drawn,
+		       MAX(be.updated_at) AS last_drew_at
+		FROM board_elements be
+		LEFT JOIN users u ON u.id = COALESCE(be.last_modified_by, be.created_by)
+		WHERE be.board_id = $1 AND be.is_deleted = false AND COALESCE(be.last_modified_by, be.created_by) IS NOT NULL
+		GROUP BY user_id, u.name, u.display_name, u.avatar_url
+		ORDER BY elements_drawn DESC
+	`
+	rows, err := r.db.QueryContext(ctx, query, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var contributors []models.CollaboratorSummary
+	for rows.Next() {
+		var c models.CollaboratorSummary
+		if err := rows.Scan(&c.UserID, &c.Name, &c.DisplayName, &c.AvatarURL, &c.ElementsDrawn, &c.LastDrewAt); err != nil {
+			return nil, err
+		}
+		contributors = append(contributors, c)
+	}
+	if contributors == nil {
+		contributors = []models.CollaboratorSummary{}
+	}
+	return contributors, nil
+}
+
+func (r *PostgresRepository) LogBoardActivity(ctx context.Context, act *models.BoardActivity) error {
+	query := `
+		INSERT INTO board_activities (id, board_id, user_id, action, details, created_at)
+		VALUES ($1, $2, $3, $4, $5, now())
+	`
+	if act.ID == uuid.Nil {
+		act.ID = uuid.New()
+	}
+	details := act.Details
+	if len(details) == 0 {
+		details = []byte("{}")
+	}
+	_, err := r.db.ExecContext(ctx, query, act.ID, act.BoardID, act.UserID, act.Action, details)
+	return err
+}
+
+func (r *PostgresRepository) ListBoardActivities(ctx context.Context, boardID uuid.UUID, limit int) ([]models.BoardActivity, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	query := `
+		SELECT ba.id, ba.board_id, ba.user_id, COALESCE(u.display_name, 'Guest/System'), ba.action, ba.details, ba.created_at
+		FROM board_activities ba
+		LEFT JOIN users u ON ba.user_id = u.id
+		WHERE ba.board_id = $1
+		ORDER BY ba.created_at DESC
+		LIMIT $2
+	`
+	rows, err := r.db.QueryContext(ctx, query, boardID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var activities []models.BoardActivity
+	for rows.Next() {
+		var a models.BoardActivity
+		if err := rows.Scan(&a.ID, &a.BoardID, &a.UserID, &a.UserName, &a.Action, &a.Details, &a.CreatedAt); err != nil {
+			return nil, err
+		}
+		activities = append(activities, a)
+	}
+	if activities == nil {
+		activities = []models.BoardActivity{}
+	}
+	return activities, nil
 }
 
 // Invitations

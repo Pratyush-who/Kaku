@@ -174,7 +174,7 @@ func (h *ProjectHandler) HandleProjectByID(w http.ResponseWriter, r *http.Reques
 	case "invitations":
 		h.handleInvitations(w, r, projectID, userID, role)
 	case "boards":
-		h.handleProjectBoards(w, r, projectID, userID, role)
+		h.handleProjectBoards(w, r, projectID, userID, role, parts[2:])
 	default:
 		httputil.Error(w, http.StatusNotFound, "Endpoint not found")
 	}
@@ -303,12 +303,32 @@ func (h *ProjectHandler) handleInvitations(w http.ResponseWriter, r *http.Reques
 }
 
 type CreateBoardRequest struct {
-	Name     string          `json:"name"`
-	Content  json.RawMessage `json:"content,omitempty"`
-	Viewport json.RawMessage `json:"viewport,omitempty"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Thumbnail   string          `json:"thumbnail,omitempty"`
+	Content     json.RawMessage `json:"content,omitempty"`
+	Viewport    json.RawMessage `json:"viewport,omitempty"`
 }
 
-func (h *ProjectHandler) handleProjectBoards(w http.ResponseWriter, r *http.Request, projectID, userID uuid.UUID, role models.ProjectRole) {
+func (h *ProjectHandler) handleProjectBoards(w http.ResponseWriter, r *http.Request, projectID, userID uuid.UUID, role models.ProjectRole, remaining []string) {
+	// GET /api/v1/projects/{projectId}/boards/trash
+	if len(remaining) > 0 && remaining[0] == "trash" {
+		if r.Method != http.MethodGet {
+			httputil.Error(w, http.StatusMethodNotAllowed, "Method not allowed")
+			return
+		}
+		trashed, err := h.repo.ListProjectTrashedBoards(r.Context(), projectID)
+		if err != nil {
+			httputil.Error(w, http.StatusInternalServerError, "Failed to list trashed boards")
+			return
+		}
+		if trashed == nil {
+			trashed = []models.BoardSummary{}
+		}
+		httputil.JSON(w, http.StatusOK, trashed)
+		return
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		boards, err := h.repo.ListProjectBoardsSummary(r.Context(), projectID)
@@ -339,13 +359,15 @@ func (h *ProjectHandler) handleProjectBoards(w http.ResponseWriter, r *http.Requ
 		}
 
 		board := &models.Board{
-			ID:        uuid.New(),
-			ProjectID: projectID,
-			Name:      req.Name,
-			Content:   req.Content,
-			Viewport:  req.Viewport,
-			Revision:  0,
-			CreatedBy: &userID,
+			ID:          uuid.New(),
+			ProjectID:   projectID,
+			Name:        req.Name,
+			Description: strings.TrimSpace(req.Description),
+			Thumbnail:   strings.TrimSpace(req.Thumbnail),
+			Content:     req.Content,
+			Viewport:    req.Viewport,
+			Revision:    0,
+			CreatedBy:   &userID,
 		}
 
 		if err := h.repo.CreateBoard(r.Context(), board); err != nil {

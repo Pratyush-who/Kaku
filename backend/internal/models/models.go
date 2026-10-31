@@ -64,27 +64,137 @@ type Project struct {
 
 // Board represents a drawing workspace
 type Board struct {
-	ID        uuid.UUID       `json:"id"`
-	ProjectID uuid.UUID       `json:"projectId"`
-	Name      string          `json:"name"`
-	Content   json.RawMessage `json:"content"`
-	Viewport  json.RawMessage `json:"viewport"`
-	Revision  int64           `json:"revision"`
-	CreatedBy *uuid.UUID      `json:"createdBy,omitempty"`
-	CreatedAt time.Time       `json:"createdAt"`
-	UpdatedAt time.Time       `json:"updatedAt"`
+	ID           uuid.UUID       `json:"id"`
+	ProjectID    uuid.UUID       `json:"projectId"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	Thumbnail    string          `json:"thumbnail"`
+	Content      json.RawMessage `json:"content"`
+	Viewport     json.RawMessage `json:"viewport"`
+	Revision     int64           `json:"revision"`
+	IsPublic     bool            `json:"isPublic"`
+	PublicRole   ProjectRole     `json:"publicRole"`
+	ShareToken   string          `json:"shareToken,omitempty"`
+	HasPassword  bool            `json:"hasPassword"`
+	PasswordHash string          `json:"-"`
+	IsTrashed    bool            `json:"isTrashed"`
+	TrashedAt    *time.Time      `json:"trashedAt,omitempty"`
+	CreatedBy    *uuid.UUID      `json:"createdBy,omitempty"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt"`
 }
 
 // BoardSummary is a lightweight board representation (without heavy content JSON)
 type BoardSummary struct {
-	ID        uuid.UUID  `json:"id"`
-	ProjectID uuid.UUID  `json:"projectId"`
-	Name      string     `json:"name"`
-	Revision  int64      `json:"revision"`
-	CreatedBy *uuid.UUID `json:"createdBy,omitempty"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
+	ID          uuid.UUID   `json:"id"`
+	ProjectID   uuid.UUID   `json:"projectId"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Thumbnail   string      `json:"thumbnail"`
+	Revision    int64       `json:"revision"`
+	IsPublic    bool        `json:"isPublic"`
+	PublicRole  ProjectRole `json:"publicRole"`
+	ShareToken  string      `json:"shareToken,omitempty"`
+	HasPassword bool        `json:"hasPassword"`
+	IsTrashed   bool        `json:"isTrashed"`
+	TrashedAt   *time.Time  `json:"trashedAt,omitempty"`
+	CreatedBy   *uuid.UUID  `json:"createdBy,omitempty"`
+	CreatedAt   time.Time   `json:"createdAt"`
+	UpdatedAt   time.Time   `json:"updatedAt"`
 }
+
+// BoardElement represents a discrete shape, drawing, arrow, text, or image on the canvas
+type BoardElement struct {
+	ID                 string          `json:"id"`
+	BoardID            uuid.UUID       `json:"boardId"`
+	Type               string          `json:"type"` // rectangle, ellipse, diamond, arrow, line, freedraw, text, image, frame
+	X                  float64         `json:"x"`
+	Y                  float64         `json:"y"`
+	Width              float64         `json:"width"`
+	Height             float64         `json:"height"`
+	Angle              float64         `json:"angle"`
+	StrokeColor        string          `json:"strokeColor"`
+	BackgroundColor    string          `json:"backgroundColor"`
+	FillStyle          string          `json:"fillStyle"`
+	StrokeWidth        float64         `json:"strokeWidth"`
+	StrokeStyle        string          `json:"strokeStyle"`
+	Roughness          float64         `json:"roughness"`
+	Opacity            float64         `json:"opacity"`
+	Text               string          `json:"text"`
+	FontSize           float64         `json:"fontSize"`
+	FontFamily         string          `json:"fontFamily"`
+	TextAlign          string          `json:"textAlign"`
+	Points             json.RawMessage `json:"points"`
+	Properties         json.RawMessage `json:"properties"`
+	ZIndex             int64           `json:"zIndex"`
+	Version            int64           `json:"version"`
+	IsDeleted          bool            `json:"isDeleted"`
+	CreatedBy          *uuid.UUID      `json:"createdBy,omitempty"`
+	CreatedByName      string          `json:"createdByName,omitempty"`
+	LastModifiedBy     *uuid.UUID      `json:"lastModifiedBy,omitempty"`
+	LastModifiedByName string          `json:"lastModifiedByName,omitempty"`
+	CreatedAt          time.Time       `json:"createdAt"`
+	UpdatedAt          time.Time       `json:"updatedAt"`
+}
+
+// BoardVersion represents a historical snapshot of the canvas
+type BoardVersion struct {
+	ID            uuid.UUID       `json:"id"`
+	BoardID       uuid.UUID       `json:"boardId"`
+	VersionNumber int             `json:"versionNumber"`
+	Title         string          `json:"title"`
+	Description   string          `json:"description"`
+	Content       json.RawMessage `json:"content"`
+	Viewport      json.RawMessage `json:"viewport"`
+	CreatedBy     *uuid.UUID      `json:"createdBy,omitempty"`
+	CreatedByName string          `json:"createdByName,omitempty"`
+	CreatedAt     time.Time       `json:"createdAt"`
+}
+
+// BoardActivity logs events on the board (e.g. joined, drew, restored)
+type BoardActivity struct {
+	ID        uuid.UUID       `json:"id"`
+	BoardID   uuid.UUID       `json:"boardId"`
+	UserID    *uuid.UUID      `json:"userId,omitempty"`
+	UserName  string          `json:"userName,omitempty"`
+	Action    string          `json:"action"`
+	Details   json.RawMessage `json:"details"`
+	CreatedAt time.Time       `json:"createdAt"`
+}
+
+// CollaboratorSummary encapsulates "who who drew" - contributor element metrics
+type CollaboratorSummary struct {
+	UserID        uuid.UUID `json:"userId"`
+	Name          string    `json:"name"`
+	DisplayName   string    `json:"displayName"`
+	AvatarURL     string    `json:"avatarUrl"`
+	ElementsDrawn int       `json:"elementsDrawn"`
+	LastDrewAt    time.Time `json:"lastDrewAt"`
+}
+
+// ActiveCollaborator represents a live collaborator currently connected to the canvas
+type ActiveCollaborator struct {
+	UserID           string    `json:"userId"`
+	Name             string    `json:"name"`
+	DisplayName      string    `json:"displayName"`
+	AvatarURL        string    `json:"avatarUrl"`
+	Role             string    `json:"role"`
+	Color            string    `json:"color"`
+	CursorX          float64   `json:"cursorX"`
+	CursorY          float64   `json:"cursorY"`
+	IsDrawing        bool      `json:"isDrawing"`
+	DrawingTool      string    `json:"drawingTool"`
+	CurrentElementID string    `json:"currentElementId,omitempty"`
+	ConnectedAt      time.Time `json:"connectedAt"`
+	LastActiveAt     time.Time `json:"lastActiveAt"`
+}
+
+// BoardCollaboratorsResponse bundles live active users and historical contributors
+type BoardCollaboratorsResponse struct {
+	ActiveUsers  []ActiveCollaborator  `json:"activeUsers"`
+	Contributors []CollaboratorSummary `json:"contributors"`
+}
+
 
 // ProjectDetails includes project metadata, user role, and member/board counts
 type ProjectDetails struct {
