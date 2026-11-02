@@ -192,6 +192,29 @@ func (h *Hub) ServeWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 3. If still not authenticated, check parent project's public share settings
+	if !authenticated {
+		projShareToken := r.URL.Query().Get("projectShareToken")
+		if projShareToken == "" {
+			projShareToken = r.URL.Query().Get("shareToken")
+		}
+
+		parentProj, pErr := h.repo.GetProjectByID(ctx, board.ProjectID)
+		if pErr == nil && parentProj.IsPublic && parentProj.ShareToken != "" && (projShareToken == parentProj.ShareToken || parentProj.IsPublic) {
+			randomNum := rand.Intn(9000) + 1000
+			clientInfo = models.ActiveCollaborator{
+				UserID:       fmt.Sprintf("project-guest-%d", randomNum),
+				Name:         fmt.Sprintf("Guest %d", randomNum),
+				DisplayName:  fmt.Sprintf("Guest %d", randomNum),
+				AvatarURL:    "",
+				Role:         string(parentProj.PublicRole),
+				ConnectedAt:  time.Now(),
+				LastActiveAt: time.Now(),
+			}
+			authenticated = true
+		}
+	}
+
 	if !authenticated {
 		httputil.Error(w, http.StatusForbidden, "Unauthorized: valid token or share link required")
 		return

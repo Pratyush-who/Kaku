@@ -88,6 +88,10 @@ func main() {
 	mux.Handle("/api/v1/projects", authMW(http.HandlerFunc(projectHandler.HandleProjects)))
 	mux.Handle("/api/v1/projects/", authMW(http.HandlerFunc(projectHandler.HandleProjectByID)))
 
+	// User Autocomplete & Search (Google Drive style email / name search)
+	mux.Handle("/api/v1/users/search", authMW(http.HandlerFunc(projectHandler.HandleSearchUsers)))
+	mux.Handle("/api/v1/search", authMW(http.HandlerFunc(projectHandler.HandleGlobalSearch)))
+
 	boardMuxFunc := func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/ws") {
 			collabHub.ServeWS(w, r)
@@ -100,6 +104,16 @@ func main() {
 	mux.HandleFunc("/api/v1/boards/", boardMuxFunc)
 
 	mux.HandleFunc("/api/v1/shared/boards/", boardHandler.HandleSharedBoard)
+
+	// Public Shared Projects & Joining
+	sharedProjectMuxFunc := func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/join") {
+			authMW(http.HandlerFunc(projectHandler.HandleSharedProject)).ServeHTTP(w, r)
+		} else {
+			projectHandler.HandleSharedProject(w, r)
+		}
+	}
+	mux.HandleFunc("/api/v1/shared/projects/", sharedProjectMuxFunc)
 
 	invitationMuxFunc := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
@@ -156,6 +170,9 @@ var profileFieldsSQL string
 //go:embed migrations/000003_board_management_and_collaboration.up.sql
 var boardCollabSQL string
 
+//go:embed migrations/000004_project_sharing_and_search.up.sql
+var projectSharingSQL string
+
 func autoMigrate(db *sql.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -167,6 +184,9 @@ func autoMigrate(db *sql.DB) error {
 		return err
 	}
 	if _, err := db.ExecContext(ctx, boardCollabSQL); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, projectSharingSQL); err != nil {
 		return err
 	}
 	return nil

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -454,16 +455,26 @@ func (r *PostgresRepository) CreateProject(ctx context.Context, project *models.
 	now := time.Now()
 	project.CreatedAt = now
 	project.UpdatedAt = now
+	if project.PublicRole == "" {
+		project.PublicRole = models.RoleViewer
+	}
+	if project.ShareToken == "" {
+		project.ShareToken = uuid.New().String()
+	}
 
 	// 1. Insert Project
 	insertProjectQuery := `
-		INSERT INTO projects (id, owner_id, name, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO projects (id, owner_id, name, description, is_public, public_role, share_token, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 	_, err = tx.ExecContext(ctx, insertProjectQuery,
 		project.ID,
 		project.OwnerID,
 		project.Name,
+		project.Description,
+		project.IsPublic,
+		project.PublicRole,
+		project.ShareToken,
 		project.CreatedAt,
 		project.UpdatedAt,
 	)
@@ -491,10 +502,10 @@ func (r *PostgresRepository) CreateProject(ctx context.Context, project *models.
 
 func (r *PostgresRepository) ListUserProjects(ctx context.Context, userID uuid.UUID) ([]models.ProjectDetails, error) {
 	query := `
-		SELECT p.id, p.owner_id, p.name, p.created_at, p.updated_at,
+		SELECT p.id, p.owner_id, p.name, COALESCE(p.description, ''), p.is_public, p.public_role, p.share_token, p.created_at, p.updated_at,
 		       pm.role,
 		       (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) AS member_count,
-		       (SELECT COUNT(*) FROM boards WHERE project_id = p.id) AS board_count
+		       (SELECT COUNT(*) FROM boards WHERE project_id = p.id AND is_trashed = false) AS board_count
 		FROM projects p
 		INNER JOIN project_members pm ON p.id = pm.project_id
 		WHERE pm.user_id = $1
@@ -513,6 +524,10 @@ func (r *PostgresRepository) ListUserProjects(ctx context.Context, userID uuid.U
 			&p.ID,
 			&p.OwnerID,
 			&p.Name,
+			&p.Description,
+			&p.IsPublic,
+			&p.PublicRole,
+			&p.ShareToken,
 			&p.CreatedAt,
 			&p.UpdatedAt,
 			&p.UserRole,
@@ -521,6 +536,9 @@ func (r *PostgresRepository) ListUserProjects(ctx context.Context, userID uuid.U
 		); err != nil {
 			return nil, err
 		}
+		if p.ShareToken != "" {
+			p.ShareURL = fmt.Sprintf("/shared/projects/%s", p.ShareToken)
+		}
 		projects = append(projects, p)
 	}
 	return projects, nil
@@ -528,10 +546,10 @@ func (r *PostgresRepository) ListUserProjects(ctx context.Context, userID uuid.U
 
 func (r *PostgresRepository) GetProjectDetails(ctx context.Context, projectID, userID uuid.UUID) (*models.ProjectDetails, error) {
 	query := `
-		SELECT p.id, p.owner_id, p.name, p.created_at, p.updated_at,
+		SELECT p.id, p.owner_id, p.name, COALESCE(p.description, ''), p.is_public, p.public_role, p.share_token, p.created_at, p.updated_at,
 		       pm.role,
 		       (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) AS member_count,
-		       (SELECT COUNT(*) FROM boards WHERE project_id = p.id) AS board_count
+		       (SELECT COUNT(*) FROM boards WHERE project_id = p.id AND is_trashed = false) AS board_count
 		FROM projects p
 		INNER JOIN project_members pm ON p.id = pm.project_id
 		WHERE p.id = $1 AND pm.user_id = $2
@@ -541,6 +559,10 @@ func (r *PostgresRepository) GetProjectDetails(ctx context.Context, projectID, u
 		&p.ID,
 		&p.OwnerID,
 		&p.Name,
+		&p.Description,
+		&p.IsPublic,
+		&p.PublicRole,
+		&p.ShareToken,
 		&p.CreatedAt,
 		&p.UpdatedAt,
 		&p.UserRole,
@@ -553,12 +575,15 @@ func (r *PostgresRepository) GetProjectDetails(ctx context.Context, projectID, u
 	if err != nil {
 		return nil, err
 	}
+	if p.ShareToken != "" {
+		p.ShareURL = fmt.Sprintf("/shared/projects/%s", p.ShareToken)
+	}
 	return p, nil
 }
 
 func (r *PostgresRepository) GetProjectByID(ctx context.Context, projectID uuid.UUID) (*models.Project, error) {
 	query := `
-		SELECT id, owner_id, name, created_at, updated_at
+		SELECT id, owner_id, name, COALESCE(description, ''), is_public, public_role, share_token, created_at, updated_at
 		FROM projects
 		WHERE id = $1
 	`
@@ -567,6 +592,10 @@ func (r *PostgresRepository) GetProjectByID(ctx context.Context, projectID uuid.
 		&p.ID,
 		&p.OwnerID,
 		&p.Name,
+		&p.Description,
+		&p.IsPublic,
+		&p.PublicRole,
+		&p.ShareToken,
 		&p.CreatedAt,
 		&p.UpdatedAt,
 	)
@@ -594,6 +623,388 @@ func (r *PostgresRepository) UpdateProjectName(ctx context.Context, projectID uu
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *PostgresRepository) UpdateProjectMetadata(ctx context.Context, projectID uuid.UUID, name, description string) error {
+	query := `
+		UPDATE projects
+		SET name = CASE WHEN $2 != '' THEN $2 ELSE name END,
+		    description = CASE WHEN $3 != '__KEEP__' THEN $3 ELSE description END,
+		    updated_at = now()
+		WHERE id = $1
+	`
+	res, err := r.db.ExecContext(ctx, query, projectID, name, description)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresRepository) GetProjectByShareToken(ctx context.Context, shareToken string) (*models.Project, error) {
+	token := strings.TrimSpace(shareToken)
+	if token == "" {
+		return nil, ErrNotFound
+	}
+	query := `
+		SELECT id, owner_id, name, COALESCE(description, ''), is_public, public_role, share_token, created_at, updated_at
+		FROM projects
+		WHERE share_token = $1 AND is_public = true
+	`
+	p := &models.Project{}
+	err := r.db.QueryRowContext(ctx, query, token).Scan(
+		&p.ID,
+		&p.OwnerID,
+		&p.Name,
+		&p.Description,
+		&p.IsPublic,
+		&p.PublicRole,
+		&p.ShareToken,
+		&p.CreatedAt,
+		&p.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func (r *PostgresRepository) UpdateProjectShareSettings(ctx context.Context, projectID uuid.UUID, isPublic bool, publicRole models.ProjectRole, newShareToken string) error {
+	if publicRole == "" {
+		publicRole = models.RoleViewer
+	}
+	var query string
+	var args []interface{}
+
+	if newShareToken != "" {
+		query = `
+			UPDATE projects
+			SET is_public = $2, public_role = $3, share_token = $4, updated_at = now()
+			WHERE id = $1
+		`
+		args = []interface{}{projectID, isPublic, publicRole, newShareToken}
+	} else {
+		query = `
+			UPDATE projects
+			SET is_public = $2, public_role = $3, updated_at = now()
+			WHERE id = $1
+		`
+		args = []interface{}{projectID, isPublic, publicRole}
+	}
+
+	res, err := r.db.ExecContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresRepository) JoinProjectByShareToken(ctx context.Context, shareToken string, userID uuid.UUID) (*models.Project, models.ProjectRole, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	defer tx.Rollback()
+
+	query := `
+		SELECT id, owner_id, name, COALESCE(description, ''), is_public, public_role, share_token, created_at, updated_at
+		FROM projects
+		WHERE share_token = $1 AND is_public = true
+		FOR UPDATE
+	`
+	p := &models.Project{}
+	err = tx.QueryRowContext(ctx, query, shareToken).Scan(
+		&p.ID,
+		&p.OwnerID,
+		&p.Name,
+		&p.Description,
+		&p.IsPublic,
+		&p.PublicRole,
+		&p.ShareToken,
+		&p.CreatedAt,
+		&p.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", errors.New("shared project not found or link is not active")
+	}
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Check if user is already a member
+	var existingRole models.ProjectRole
+	roleCheckQuery := `SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2`
+	err = tx.QueryRowContext(ctx, roleCheckQuery, p.ID, userID).Scan(&existingRole)
+	if err == nil {
+		// If existing member was viewer and share link offers editor, upgrade role
+		if existingRole == models.RoleViewer && p.PublicRole == models.RoleEditor {
+			_, _ = tx.ExecContext(ctx, `UPDATE project_members SET role = 'editor' WHERE project_id = $1 AND user_id = $2`, p.ID, userID)
+			existingRole = models.RoleEditor
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, "", err
+		}
+		return p, existingRole, nil
+	}
+
+	assignedRole := p.PublicRole
+	if assignedRole == "" {
+		assignedRole = models.RoleViewer
+	}
+
+	insertMember := `
+		INSERT INTO project_members (project_id, user_id, role, joined_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (project_id, user_id) DO NOTHING
+	`
+	_, err = tx.ExecContext(ctx, insertMember, p.ID, userID, assignedRole)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, "", err
+	}
+	return p, assignedRole, nil
+}
+
+func (r *PostgresRepository) AddOrUpdateProjectMember(ctx context.Context, projectID, userID uuid.UUID, role models.ProjectRole) error {
+	if role != models.RoleEditor && role != models.RoleViewer {
+		return errors.New("role must be 'editor' or 'viewer'")
+	}
+
+	var ownerID uuid.UUID
+	err := r.db.QueryRowContext(ctx, `SELECT owner_id FROM projects WHERE id = $1`, projectID).Scan(&ownerID)
+	if err != nil {
+		return err
+	}
+	if ownerID == userID {
+		return errors.New("cannot change role of project owner")
+	}
+
+	query := `
+		INSERT INTO project_members (project_id, user_id, role, joined_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (project_id, user_id)
+		DO UPDATE SET role = EXCLUDED.role
+	`
+	_, err = r.db.ExecContext(ctx, query, projectID, userID, role)
+	return err
+}
+
+func (r *PostgresRepository) UpdateProjectMemberRole(ctx context.Context, projectID, userID uuid.UUID, role models.ProjectRole) error {
+	if role != models.RoleEditor && role != models.RoleViewer {
+		return errors.New("role must be 'editor' or 'viewer'")
+	}
+
+	var ownerID uuid.UUID
+	err := r.db.QueryRowContext(ctx, `SELECT owner_id FROM projects WHERE id = $1`, projectID).Scan(&ownerID)
+	if err != nil {
+		return err
+	}
+	if ownerID == userID {
+		return errors.New("cannot change role of project owner")
+	}
+
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE project_members
+		SET role = $3
+		WHERE project_id = $1 AND user_id = $2
+	`, projectID, userID, role)
+	if err != nil {
+		return err
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *PostgresRepository) SearchUsers(ctx context.Context, search string, currentUserID uuid.UUID, projectID *uuid.UUID, limit int) ([]models.UserSearchResult, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	search = strings.TrimSpace(search)
+	if search == "" {
+		return []models.UserSearchResult{}, nil
+	}
+
+	searchPattern := "%" + strings.ToLower(search) + "%"
+
+	var query string
+	var rows *sql.Rows
+	var err error
+
+	if projectID != nil && *projectID != uuid.Nil {
+		query = `
+			SELECT u.id, u.name, u.email, u.display_name, COALESCE(u.avatar_url, ''),
+			       CASE WHEN pm.user_id IS NOT NULL THEN true ELSE false END AS is_member,
+			       COALESCE(pm.role, '') AS role
+			FROM users u
+			LEFT JOIN project_members pm ON pm.project_id = $2 AND pm.user_id = u.id
+			WHERE (LOWER(u.name) LIKE $1 OR LOWER(u.display_name) LIKE $1 OR LOWER(u.email) LIKE $1)
+			ORDER BY 
+			    CASE WHEN LOWER(u.email) = LOWER($3) THEN 0
+			         WHEN LOWER(u.email) LIKE $1 THEN 1
+			         WHEN LOWER(u.display_name) LIKE $1 THEN 2
+			         ELSE 3 END,
+			    u.display_name ASC
+			LIMIT $4
+		`
+		rows, err = r.db.QueryContext(ctx, query, searchPattern, *projectID, search, limit)
+	} else {
+		query = `
+			SELECT u.id, u.name, u.email, u.display_name, COALESCE(u.avatar_url, ''),
+			       false AS is_member,
+			       '' AS role
+			FROM users u
+			WHERE (LOWER(u.name) LIKE $1 OR LOWER(u.display_name) LIKE $1 OR LOWER(u.email) LIKE $1)
+			ORDER BY 
+			    CASE WHEN LOWER(u.email) = LOWER($2) THEN 0
+			         WHEN LOWER(u.email) LIKE $1 THEN 1
+			         WHEN LOWER(u.display_name) LIKE $1 THEN 2
+			         ELSE 3 END,
+			    u.display_name ASC
+			LIMIT $3
+		`
+		rows, err = r.db.QueryContext(ctx, query, searchPattern, search, limit)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []models.UserSearchResult
+	for rows.Next() {
+		var u models.UserSearchResult
+		var roleStr string
+		if err := rows.Scan(&u.ID, &u.Name, &u.Email, &u.DisplayName, &u.AvatarURL, &u.IsMember, &roleStr); err != nil {
+			return nil, err
+		}
+		u.Role = models.ProjectRole(roleStr)
+		results = append(results, u)
+	}
+	if results == nil {
+		results = []models.UserSearchResult{}
+	}
+	return results, nil
+}
+
+func (r *PostgresRepository) SearchProjectsAndBoards(ctx context.Context, userID uuid.UUID, search string, limit int) (*models.GlobalSearchResult, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	search = strings.TrimSpace(search)
+	if search == "" {
+		return &models.GlobalSearchResult{
+			Projects: []models.ProjectDetails{},
+			Boards:   []models.RecentBoard{},
+		}, nil
+	}
+
+	searchPattern := "%" + strings.ToLower(search) + "%"
+
+	// 1. Matching Projects
+	projQuery := `
+		SELECT p.id, p.owner_id, p.name, COALESCE(p.description, ''), p.is_public, p.public_role, p.share_token, p.created_at, p.updated_at,
+		       pm.role,
+		       (SELECT COUNT(*) FROM project_members WHERE project_id = p.id) AS member_count,
+		       (SELECT COUNT(*) FROM boards WHERE project_id = p.id AND is_trashed = false) AS board_count
+		FROM projects p
+		INNER JOIN project_members pm ON p.id = pm.project_id
+		WHERE pm.user_id = $1 AND (LOWER(p.name) LIKE $2 OR LOWER(p.description) LIKE $2)
+		ORDER BY p.updated_at DESC
+		LIMIT $3
+	`
+	pRows, err := r.db.QueryContext(ctx, projQuery, userID, searchPattern, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer pRows.Close()
+
+	var projects []models.ProjectDetails
+	for pRows.Next() {
+		var p models.ProjectDetails
+		if err := pRows.Scan(
+			&p.ID,
+			&p.OwnerID,
+			&p.Name,
+			&p.Description,
+			&p.IsPublic,
+			&p.PublicRole,
+			&p.ShareToken,
+			&p.CreatedAt,
+			&p.UpdatedAt,
+			&p.UserRole,
+			&p.MemberCount,
+			&p.BoardCount,
+		); err != nil {
+			return nil, err
+		}
+		if p.ShareToken != "" {
+			p.ShareURL = fmt.Sprintf("/shared/projects/%s", p.ShareToken)
+		}
+		projects = append(projects, p)
+	}
+
+	// 2. Matching Boards
+	boardQuery := `
+		SELECT b.id, b.project_id, p.name AS project_name, b.name, b.revision, pm.role, b.created_by, b.created_at, b.updated_at
+		FROM boards b
+		INNER JOIN projects p ON b.project_id = p.id
+		INNER JOIN project_members pm ON p.id = pm.project_id
+		WHERE pm.user_id = $1 AND b.is_trashed = false AND (LOWER(b.name) LIKE $2 OR LOWER(b.description) LIKE $2)
+		ORDER BY b.updated_at DESC
+		LIMIT $3
+	`
+	bRows, err := r.db.QueryContext(ctx, boardQuery, userID, searchPattern, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer bRows.Close()
+
+	var boards []models.RecentBoard
+	for bRows.Next() {
+		var b models.RecentBoard
+		if err := bRows.Scan(
+			&b.ID,
+			&b.ProjectID,
+			&b.ProjectName,
+			&b.Name,
+			&b.Revision,
+			&b.Role,
+			&b.CreatedBy,
+			&b.CreatedAt,
+			&b.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		boards = append(boards, b)
+	}
+
+	if projects == nil {
+		projects = []models.ProjectDetails{}
+	}
+	if boards == nil {
+		boards = []models.RecentBoard{}
+	}
+
+	return &models.GlobalSearchResult{
+		Projects: projects,
+		Boards:   boards,
+	}, nil
 }
 
 func (r *PostgresRepository) DeleteProject(ctx context.Context, projectID uuid.UUID) error {

@@ -55,11 +55,15 @@ type UserProfileResponse struct {
 
 // Project represents a workspace container
 type Project struct {
-	ID        uuid.UUID `json:"id"`
-	OwnerID   uuid.UUID `json:"ownerId"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID          uuid.UUID   `json:"id"`
+	OwnerID     uuid.UUID   `json:"ownerId"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	IsPublic    bool        `json:"isPublic"`
+	PublicRole  ProjectRole `json:"publicRole"`
+	ShareToken  string      `json:"shareToken,omitempty"`
+	CreatedAt   time.Time   `json:"createdAt"`
+	UpdatedAt   time.Time   `json:"updatedAt"`
 }
 
 // Board represents a drawing workspace
@@ -202,6 +206,79 @@ type ProjectDetails struct {
 	UserRole    ProjectRole `json:"userRole"`
 	MemberCount int         `json:"memberCount"`
 	BoardCount  int         `json:"boardCount"`
+	ShareURL    string      `json:"shareUrl,omitempty"`
+}
+
+// UserPublic is a safe public representation of a user (no email or password)
+type UserPublic struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	DisplayName string    `json:"displayName"`
+	AvatarURL   string    `json:"avatarUrl"`
+}
+
+// UserSearchResult represents a user found via email/name autocomplete search
+type UserSearchResult struct {
+	ID          uuid.UUID   `json:"id"`
+	Name        string      `json:"name"`
+	Email       string      `json:"email"`
+	DisplayName string      `json:"displayName"`
+	AvatarURL   string      `json:"avatarUrl"`
+	IsMember    bool        `json:"isMember,omitempty"`
+	Role        ProjectRole `json:"role,omitempty"`
+}
+
+// ProjectShareSettingsResponse bundles link-sharing settings for a project
+type ProjectShareSettingsResponse struct {
+	ProjectID   uuid.UUID   `json:"projectId"`
+	Name        string      `json:"name"`
+	ShareToken  string      `json:"shareToken"`
+	ShareURL    string      `json:"shareUrl"`
+	IsPublic    bool        `json:"isPublic"`
+	PublicRole  ProjectRole `json:"publicRole"`
+	MemberCount int         `json:"memberCount"`
+}
+
+// PublicProjectResponse bundles project info for public shared link view
+type PublicProjectResponse struct {
+	Project     *Project       `json:"project"`
+	Owner       *UserPublic    `json:"owner"`
+	PublicRole  ProjectRole    `json:"publicRole"`
+	Boards      []BoardSummary `json:"boards"`
+	MemberCount int            `json:"memberCount"`
+}
+
+// AddCollaboratorRequest allows adding a collaborator by email or userId
+type AddCollaboratorRequest struct {
+	Email  string      `json:"email"`
+	UserID *uuid.UUID  `json:"userId,omitempty"`
+	Role   ProjectRole `json:"role"`
+}
+
+// AddCollaboratorResponse describes whether member was directly added or invitation dispatched
+type AddCollaboratorResponse struct {
+	Type       string        `json:"type"` // "member_added", "member_updated", "invitation_created"
+	Message    string        `json:"message"`
+	User       *User         `json:"user,omitempty"`
+	Invitation *Invitation   `json:"invitation,omitempty"`
+	RawToken   string        `json:"token,omitempty"`
+	ShareURL   string        `json:"shareUrl,omitempty"`
+	Role       ProjectRole   `json:"role"`
+}
+
+// ProjectCollaboratorsOverview bundles members and pending invitations for the share dialog
+type ProjectCollaboratorsOverview struct {
+	ProjectID   uuid.UUID       `json:"projectId"`
+	Owner       *UserPublic     `json:"owner"`
+	Members     []ProjectMember `json:"members"`
+	Invitations []Invitation    `json:"invitations"`
+	Share       ProjectShareSettingsResponse `json:"share"`
+}
+
+// GlobalSearchResult encapsulates matching projects and boards from keyword/email search
+type GlobalSearchResult struct {
+	Projects []ProjectDetails `json:"projects"`
+	Boards   []RecentBoard    `json:"boards"`
 }
 
 // ProjectRole defines the role of a member

@@ -58,9 +58,13 @@ type SaveBoardContentResponse struct {
 
 type BoardDetailResponse struct {
 	*models.Board
-	ActiveCollaboratorsCount int                       `json:"activeCollaboratorsCount"`
+	ActiveCollaboratorsCount int                         `json:"activeCollaboratorsCount"`
 	ActiveCollaborators      []models.ActiveCollaborator `json:"activeCollaborators,omitempty"`
-	UserRole                 models.ProjectRole        `json:"userRole"`
+	UserRole                 models.ProjectRole          `json:"userRole"`
+	ProjectShareToken        string                      `json:"projectShareToken,omitempty"`
+	ProjectShareURL          string                      `json:"projectShareUrl,omitempty"`
+	ProjectIsPublic          bool                        `json:"projectIsPublic"`
+	ProjectPublicRole        models.ProjectRole          `json:"projectPublicRole,omitempty"`
 }
 
 type ShareSettingsRequest struct {
@@ -72,12 +76,17 @@ type ShareSettingsRequest struct {
 }
 
 type ShareSettingsResponse struct {
-	BoardID     uuid.UUID          `json:"boardId"`
-	ShareToken  string             `json:"shareToken"`
-	ShareURL    string             `json:"shareUrl"`
-	IsPublic    bool               `json:"isPublic"`
-	PublicRole  models.ProjectRole `json:"publicRole"`
-	HasPassword bool               `json:"hasPassword"`
+	BoardID           uuid.UUID          `json:"boardId"`
+	ShareToken        string             `json:"shareToken"`
+	ShareURL          string             `json:"shareUrl"`
+	IsPublic          bool               `json:"isPublic"`
+	PublicRole        models.ProjectRole `json:"publicRole"`
+	HasPassword       bool               `json:"hasPassword"`
+	ProjectID         uuid.UUID          `json:"projectId,omitempty"`
+	ProjectShareToken string             `json:"projectShareToken,omitempty"`
+	ProjectShareURL   string             `json:"projectShareUrl,omitempty"`
+	ProjectIsPublic   bool               `json:"projectIsPublic"`
+	ProjectPublicRole models.ProjectRole `json:"projectPublicRole,omitempty"`
 }
 
 type ElementsBatchRequest struct {
@@ -162,6 +171,8 @@ func (h *BoardHandler) HandleBoardByID(w http.ResponseWriter, r *http.Request) {
 		h.handleBoardCollaborators(w, r, board)
 	case "share":
 		h.handleBoardShare(w, r, board, userID, role)
+	case "project-share":
+		h.handleBoardProjectShare(w, r, board, userID, role)
 	case "history":
 		h.handleBoardHistory(w, r, board, userID, role, parts[2:])
 	case "activities":
@@ -178,11 +189,28 @@ func (h *BoardHandler) handleBoardRoot(w http.ResponseWriter, r *http.Request, b
 		if h.hub != nil {
 			activeUsers = h.hub.GetActiveUsers(board.ID)
 		}
+
+		var projToken, projURL string
+		var projIsPublic bool
+		var projPublicRole models.ProjectRole
+		if parentProj, err := h.repo.GetProjectByID(r.Context(), board.ProjectID); err == nil {
+			projToken = parentProj.ShareToken
+			if projToken != "" {
+				projURL = fmt.Sprintf("/shared/projects/%s", projToken)
+			}
+			projIsPublic = parentProj.IsPublic
+			projPublicRole = parentProj.PublicRole
+		}
+
 		httputil.JSON(w, http.StatusOK, BoardDetailResponse{
 			Board:                    board,
 			ActiveCollaboratorsCount: len(activeUsers),
 			ActiveCollaborators:      activeUsers,
 			UserRole:                 role,
+			ProjectShareToken:        projToken,
+			ProjectShareURL:          projURL,
+			ProjectIsPublic:          projIsPublic,
+			ProjectPublicRole:        projPublicRole,
 		})
 
 	case http.MethodPatch:
@@ -504,15 +532,32 @@ func (h *BoardHandler) handleBoardCollaborators(w http.ResponseWriter, r *http.R
 func (h *BoardHandler) handleBoardShare(w http.ResponseWriter, r *http.Request, board *models.Board, userID uuid.UUID, role models.ProjectRole) {
 	shareURL := fmt.Sprintf("/shared/boards/%s", board.ShareToken)
 
+	var projToken, projURL string
+	var projIsPublic bool
+	var projPublicRole models.ProjectRole
+	if parentProj, err := h.repo.GetProjectByID(r.Context(), board.ProjectID); err == nil {
+		projToken = parentProj.ShareToken
+		if projToken != "" {
+			projURL = fmt.Sprintf("/shared/projects/%s", projToken)
+		}
+		projIsPublic = parentProj.IsPublic
+		projPublicRole = parentProj.PublicRole
+	}
+
 	switch r.Method {
 	case http.MethodGet:
 		httputil.JSON(w, http.StatusOK, ShareSettingsResponse{
-			BoardID:     board.ID,
-			ShareToken:  board.ShareToken,
-			ShareURL:    shareURL,
-			IsPublic:    board.IsPublic,
-			PublicRole:  board.PublicRole,
-			HasPassword: board.HasPassword,
+			BoardID:           board.ID,
+			ShareToken:        board.ShareToken,
+			ShareURL:          shareURL,
+			IsPublic:          board.IsPublic,
+			PublicRole:        board.PublicRole,
+			HasPassword:       board.HasPassword,
+			ProjectID:         board.ProjectID,
+			ProjectShareToken: projToken,
+			ProjectShareURL:   projURL,
+			ProjectIsPublic:   projIsPublic,
+			ProjectPublicRole: projPublicRole,
 		})
 
 	case http.MethodPost:
@@ -566,12 +611,91 @@ func (h *BoardHandler) handleBoardShare(w http.ResponseWriter, r *http.Request, 
 		}
 
 		httputil.JSON(w, http.StatusOK, ShareSettingsResponse{
-			BoardID:     updated.ID,
-			ShareToken:  updated.ShareToken,
-			ShareURL:    fmt.Sprintf("/shared/boards/%s", updated.ShareToken),
-			IsPublic:    updated.IsPublic,
-			PublicRole:  updated.PublicRole,
-			HasPassword: updated.HasPassword,
+			BoardID:           updated.ID,
+			ShareToken:        updated.ShareToken,
+			ShareURL:          fmt.Sprintf("/shared/boards/%s", updated.ShareToken),
+			IsPublic:          updated.IsPublic,
+			PublicRole:        updated.PublicRole,
+			HasPassword:       updated.HasPassword,
+			ProjectID:         board.ProjectID,
+			ProjectShareToken: projToken,
+			ProjectShareURL:   projURL,
+			ProjectIsPublic:   projIsPublic,
+			ProjectPublicRole: projPublicRole,
+		})
+
+	default:
+		httputil.Error(w, http.StatusMethodNotAllowed, "Method not allowed")
+	}
+}
+
+// handleBoardProjectShare allows viewing and toggling project-level link sharing directly from a board
+func (h *BoardHandler) handleBoardProjectShare(w http.ResponseWriter, r *http.Request, board *models.Board, userID uuid.UUID, role models.ProjectRole) {
+	parentProj, err := h.repo.GetProjectByID(r.Context(), board.ProjectID)
+	if err != nil {
+		httputil.Error(w, http.StatusNotFound, "Parent project not found")
+		return
+	}
+
+	members, _ := h.repo.ListProjectMembers(r.Context(), board.ProjectID)
+
+	switch r.Method {
+	case http.MethodGet:
+		httputil.JSON(w, http.StatusOK, models.ProjectShareSettingsResponse{
+			ProjectID:   parentProj.ID,
+			Name:        parentProj.Name,
+			ShareToken:  parentProj.ShareToken,
+			ShareURL:    fmt.Sprintf("/shared/projects/%s", parentProj.ShareToken),
+			IsPublic:    parentProj.IsPublic,
+			PublicRole:  parentProj.PublicRole,
+			MemberCount: len(members),
+		})
+
+	case http.MethodPost:
+		if role != models.RoleOwner && role != models.RoleEditor {
+			httputil.Error(w, http.StatusForbidden, "Only owners and editors can configure project sharing")
+			return
+		}
+
+		var req struct {
+			IsPublic        *bool              `json:"isPublic,omitempty"`
+			PublicRole      models.ProjectRole `json:"publicRole,omitempty"`
+			RegenerateToken bool               `json:"regenerateToken,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httputil.Error(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
+
+		isPublic := parentProj.IsPublic
+		if req.IsPublic != nil {
+			isPublic = *req.IsPublic
+		}
+
+		publicRole := parentProj.PublicRole
+		if req.PublicRole == models.RoleViewer || req.PublicRole == models.RoleEditor {
+			publicRole = req.PublicRole
+		}
+
+		newShareToken := ""
+		if req.RegenerateToken || parentProj.ShareToken == "" {
+			newShareToken = uuid.New().String()
+		}
+
+		if err := h.repo.UpdateProjectShareSettings(r.Context(), parentProj.ID, isPublic, publicRole, newShareToken); err != nil {
+			httputil.Error(w, http.StatusInternalServerError, "Failed to update project share settings")
+			return
+		}
+
+		updatedProj, _ := h.repo.GetProjectByID(r.Context(), parentProj.ID)
+		httputil.JSON(w, http.StatusOK, models.ProjectShareSettingsResponse{
+			ProjectID:   updatedProj.ID,
+			Name:        updatedProj.Name,
+			ShareToken:  updatedProj.ShareToken,
+			ShareURL:    fmt.Sprintf("/shared/projects/%s", updatedProj.ShareToken),
+			IsPublic:    updatedProj.IsPublic,
+			PublicRole:  updatedProj.PublicRole,
+			MemberCount: len(members),
 		})
 
 	default:
